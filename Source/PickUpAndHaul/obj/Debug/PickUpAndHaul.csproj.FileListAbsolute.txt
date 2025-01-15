@@ -1,0 +1,8 @@
+C:\Program Files (x86)\Steam\SteamApps\common\RimWorld\Mods\HaulAdjustment\1.5\Assemblies\PickUpAndHaul.dll
+C:\Program Files (x86)\Steam\SteamApps\common\RimWorld\Mods\HaulAdjustment\Source\PickUpAndHaul\obj\Debug\PickUpAndHaul.csproj.AssemblyReference.cache
+C:\Program Files (x86)\Steam\SteamApps\common\RimWorld\Mods\HaulAdjustment\Source\PickUpAndHaul\obj\Debug\PickUpAndHaul.GeneratedMSBuildEditorConfig.editorconfig
+C:\Program Files (x86)\Steam\SteamApps\common\RimWorld\Mods\HaulAdjustment\Source\PickUpAndHaul\obj\Debug\PickUpAndHaul.AssemblyInfoInputs.cache
+C:\Program Files (x86)\Steam\SteamApps\common\RimWorld\Mods\HaulAdjustment\Source\PickUpAndHaul\obj\Debug\PickUpAndHaul.AssemblyInfo.cs
+C:\Program Files (x86)\Steam\SteamApps\common\RimWorld\Mods\HaulAdjustment\Source\PickUpAndHaul\obj\Debug\PickUpAndHaul.csproj.CoreCompileInputs.cache
+C:\Program Files (x86)\Steam\SteamApps\common\RimWorld\Mods\HaulAdjustment\Source\PickUpAndHaul\obj\Debug\PickUpAndHaul.csproj.CopyComplete
+C:\Program Files (x86)\Steam\SteamApps\common\RimWorld\Mods\HaulAdjustment\Source\PickUpAndHaul\obj\Debug\PickUpAndHaul.dll

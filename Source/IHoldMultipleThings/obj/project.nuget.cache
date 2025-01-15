@@ -1,0 +1,10 @@
+{
+  "version": 2,
+  "dgSpecHash": "ilXYOf7+PqzpaOtDmB46PfngHW6ZVoH0lC75rYTJOHWGA0YiisI6RG7Q8fXxFJiqDhg2+dA65jh36r2ag+2nyw==",
+  "success": true,
+  "projectFilePath": "C:\\Program Files (x86)\\Steam\\SteamApps\\common\\RimWorld\\Mods\\HaulAdjustment\\Source\\IHoldMultipleThings\\IHoldMultipleThings.csproj",
+  "expectedPackageFiles": [
+    "C:\\Users\\DESK\\.nuget\\packages\\krafs.rimworld.ref\\1.5.4062\\krafs.rimworld.ref.1.5.4062.nupkg.sha512"
+  ],
+  "logs": []
+}

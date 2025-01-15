@@ -1,0 +1,12 @@
+{
+  "version": 2,
+  "dgSpecHash": "JQ2COwUpyTmbYHuG0COV/3xzWl6ycDhp7t+efbmu70sBJXMZJy9wpA2K2ZV4gC/RWuAoftm/yJZtIatbKisv7w==",
+  "success": true,
+  "projectFilePath": "C:\\Program Files (x86)\\Steam\\SteamApps\\common\\RimWorld\\Mods\\HaulAdjustment\\Source\\PickUpAndHaul\\PickUpAndHaul.csproj",
+  "expectedPackageFiles": [
+    "C:\\Users\\DESK\\.nuget\\packages\\krafs.publicizer\\2.0.1\\krafs.publicizer.2.0.1.nupkg.sha512",
+    "C:\\Users\\DESK\\.nuget\\packages\\krafs.rimworld.ref\\1.5.4063\\krafs.rimworld.ref.1.5.4063.nupkg.sha512",
+    "C:\\Users\\DESK\\.nuget\\packages\\lib.harmony\\2.3.3\\lib.harmony.2.3.3.nupkg.sha512"
+  ],
+  "logs": []
+}
