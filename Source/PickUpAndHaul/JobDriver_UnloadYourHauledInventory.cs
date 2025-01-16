@@ -1,4 +1,6 @@
 ﻿using System.Linq;
+using UnityEngine;
+using Verse;
 
 namespace PickUpAndHaul;
 
@@ -6,8 +8,10 @@ public class JobDriver_UnloadYourHauledInventory : JobDriver
 {
 	private int _countToDrop = -1;
 	private int _unloadDuration = 3;
+	private int? _progressBarDelay=null;
 
-	public override void ExposeData()
+
+    public override void ExposeData()
 	{
 		base.ExposeData();
 		Scribe_Values.Look<int>(ref _countToDrop, "countToDrop", -1);
@@ -42,7 +46,37 @@ public class JobDriver_UnloadYourHauledInventory : JobDriver
 		var carryToContainer = Toils_Haul.CarryHauledThingToContainer();
 		yield return carryToContainer;
 		yield return Toils_Construct.MakeSolidThingFromBlueprintIfNecessary(TargetIndex.B);
-		yield return Toils_Haul.DepositHauledThingInContainer(TargetIndex.B, TargetIndex.None);
+		
+
+		var depositToContainer= Toils_Haul.DepositHauledThingInContainer(TargetIndex.B, TargetIndex.None);
+		var resetProgressTicks= new Toil
+        {
+            initAction = () =>
+            {
+				Log.Message("RESET PROGRESS BAR");
+                
+            }
+        };
+        var showProgressBar = ShowProgressBar();
+
+
+
+		yield return Toils_Jump.JumpIf(depositToContainer, () =>
+		{
+			Log.Message("IS THERE NO PROGRESS BAR? " + (_progressBarDelay == null));
+			return _progressBarDelay == null;
+        });
+		yield return resetProgressTicks;
+		yield return new Toil
+		{
+			initAction = () =>
+			{
+				Log.Message("SETTING PROGRESS BAR DELAY");
+				showProgressBar.defaultDuration = _progressBarDelay.Value;
+            }
+		};
+		yield return showProgressBar;
+        yield return depositToContainer;
 		yield return Toils_Haul.JumpToCarryToNextContainerIfPossible(carryToContainer, TargetIndex.B);
 		// Equivalent to jumping out of the else block
 		yield return Toils_Jump.Jump(releaseReservation);
@@ -59,7 +93,17 @@ public class JobDriver_UnloadYourHauledInventory : JobDriver
 
 	private bool TargetIsCell() => !TargetB.HasThing;
 
-	private Toil ReleaseReservation()
+	private Toil ShowProgressBar()
+	{
+        Toil reloadWait = ToilMaker.MakeToil("reload-wait");
+        reloadWait.defaultCompleteMode = ToilCompleteMode.Delay;
+		reloadWait.defaultDuration = 10;
+        reloadWait.WithProgressBarToilDelay(TargetIndex.B);
+        
+        return reloadWait;
+    }
+
+    private Toil ReleaseReservation()
 	{
 		return new()
 		{
@@ -112,15 +156,24 @@ public class JobDriver_UnloadYourHauledInventory : JobDriver
 			}
 		};
 	}
-    public static Thing ExtractThing(IHaulDestination t, out LocalTargetInfo loc)
+    public static Thing ExtractThing(IHaulDestination t, out LocalTargetInfo loc, out int? countNeeded, out int? progressBarDelay)
     {
         Thing thing = null;
 		
 		loc = null;
+		countNeeded = null;
+		progressBarDelay = null;
+		
+		if (t is null)
+			return null;
+
         if (t is ThingHaulDestination wrapper)
         {
             thing = wrapper.Thing;
 			loc = new LocalTargetInfo(thing);
+			countNeeded = wrapper.CountNeeded;
+			Log.Message("PROGRESS BAR DELAY: " + wrapper.ProgressBarDelay);
+			progressBarDelay = wrapper.ProgressBarDelay;
         }
         else if (t is Thing tt)
         {
@@ -148,13 +201,15 @@ public class JobDriver_UnloadYourHauledInventory : JobDriver
 				}
 
 				var currentPriority = StoragePriority.Unstored; // Currently in pawns inventory, so it's unstored
+				int? countNeeded = null;
 				if (StoreUtility.TryFindBestBetterStorageFor(unloadableThing.Thing, pawn, pawn.Map, currentPriority,
 					    pawn.Faction, out var cell, out var destination))
 				{
 					job.SetTarget(TargetIndex.A, unloadableThing.Thing);
-					if (cell == IntVec3.Invalid)
-					{
-						var thing = ExtractThing(destination, out var _);
+                    
+					var thing = ExtractThing(destination, out var _, out countNeeded, out _progressBarDelay);
+                    if (cell == IntVec3.Invalid)
+					{	
                         job.SetTarget(TargetIndex.B, thing);
 					}
 					else
@@ -172,7 +227,7 @@ public class JobDriver_UnloadYourHauledInventory : JobDriver
 						EndJobWith(JobCondition.Incompletable);
 						return;
 					}
-					_countToDrop = unloadableThing.Thing.stackCount;
+					_countToDrop = countNeeded.HasValue ? countNeeded.Value : unloadableThing.Thing.stackCount;
 				}
 				else
 				{
