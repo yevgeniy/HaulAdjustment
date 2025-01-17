@@ -66,10 +66,9 @@ namespace PickUpAndHaul
 
             foreach (var i in Guns.ToList())
             {
-                Log.Message("CONSIDERING GUN TO RELOAD: " + i);
+                //Log.Message("CONSIDERING GUN TO RELOAD: " + i);
                 if (i == null)
                     continue;
-
 
                 if (!i.Spawned)
                 {
@@ -94,7 +93,7 @@ namespace PickUpAndHaul
                 if (howMuchNeededForFullReload == 0)
                 {
                     /*this gun is already fully loaded*/
-                    Log.Message("REMOVING GUN SINCE IT HAS FULL AMMO: " + i);
+                    //Log.Message("REMOVING GUN SINCE IT HAS FULL AMMO: " + i);
                     Guns.Remove(i);
                     continue;
                 }
@@ -300,10 +299,10 @@ namespace PickUpAndHaul
         private int? _countCanAccept = null;
         public int SpaceRemainingFor(ThingDef stuff)
         {
-            Log.Message("GET COUNT CAN ACCEPT: " + stuff.defName);
+            //Log.Message("GET COUNT CAN ACCEPT: " + stuff.defName);
             if (_countCanAccept != null)
             {
-                Log.Message(_countCanAccept.Value + " (cached)");
+              //  Log.Message(_countCanAccept.Value + " (cached)");
                 return _countCanAccept.Value;
             }
 
@@ -324,34 +323,26 @@ namespace PickUpAndHaul
 
         public override int TryAdd(Thing item, int count, bool canMergeWithExistingStacks = true)
         {
-            Log.Message("TRY ADDING: " + item + " " + count);
+            //Log.Message("TRY ADDING: " + item + " " + count);
             var gun = new GunProxy(this.Thing as ThingWithComps);
 
             int currentMag = gun.CurrentMagCount;
-            Log.Message("CURRENT MAG COUNT: " + currentMag);
+            //Log.Message("CURRENT MAG COUNT: " + currentMag);
 
             int total = gun.TotalMagCount;
-            Log.Message("TOTAL MAG COUNT: " + total);
+            //Log.Message("TOTAL MAG COUNT: " + total);
 
             var needed = total - currentMag;
-            Log.Message("NEEDED: " + needed);
+            //Log.Message("NEEDED: " + needed);
 
             var isOneAtATime = gun.OneAtATimeReload;
-            Log.Message("ONE AT A TIME: " + isOneAtATime);
+            //Log.Message("ONE AT A TIME: " + isOneAtATime);
 
             int toAdd = isOneAtATime ? Mathf.Min(needed, count, 1) : Mathf.Min(needed, count);
 
             gun.AddAmmo(toAdd);
 
             return toAdd;
-            //if (Gun.SoundInteract != null)
-            //    Gun.SoundInteract.PlayOneShot(new TargetInfo(Gun.Thing.Position, Find.CurrentMap, false));
-
-            //pawn.carryTracker.CarriedThing.stackCount -= toAdd;
-            //if (pawn.carryTracker.CarriedThing.stackCount <= 0)
-            //    pawn.carryTracker.DestroyCarriedThing();
-
-            //throw new NotImplementedException();
         }
 
         public override bool TryAdd(Thing item, bool canMergeWithExistingStacks = true)
