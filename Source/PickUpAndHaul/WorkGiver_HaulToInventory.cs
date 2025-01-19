@@ -63,6 +63,11 @@ public class WorkGiver_HaulToInventory : WorkGiver_HaulGeneral
             return null;
         }
 
+        //Log.Message("EVAL A: "
+        //    + OverAllowedGearCapacity(pawn) + ", "
+        //    + !IsNotCorpseOrAllowed(thing) + ", "
+        //    + MassUtility.WillBeOverEncumberedAfterPickingUp(pawn, thing, 1));
+            
         if (OverAllowedGearCapacity(pawn)
             || pawn.GetComp<CompHauledToInventory>() is null // Misc. Robots compatibility
                                                              // See https://github.com/catgirlfighter/RimWorld_CommonSense/blob/master/Source/CommonSense11/CommonSense/OpportunisticTasks.cs#L129-L140
@@ -114,6 +119,7 @@ public class WorkGiver_HaulToInventory : WorkGiver_HaulGeneral
             = storeTarget.container is null ? CapacityAt(thing, storeTarget.cell, map)
             : nonSlotGroupThingOwner.GetCountCanAccept(thing);
 
+        //Log.Message("EVAL B: " +  capacityStoreCell + ", " + (storeTarget.container is null) );
         if (capacityStoreCell == 0)
         {
             return HaulAIUtility.HaulToStorageJob(pawn, thing);

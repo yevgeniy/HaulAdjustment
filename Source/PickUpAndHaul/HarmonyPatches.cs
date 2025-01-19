@@ -7,8 +7,17 @@ namespace PickUpAndHaul;
 [StaticConstructorOnStartup]
 static class HarmonyPatches
 {
+    public static Type VehiclePawnType = null;
     static HarmonyPatches()
     {
+        var assmeblies = AppDomain.CurrentDomain.GetAssemblies();
+        VehiclePawnType = assmeblies.SelectMany(v => v.GetTypes()).FirstOrDefault(v => v.Name == "VehiclePawn");
+        if (VehiclePawnType != null)
+        {
+
+        }
+
+
         var harmony = new Harmony("mehni.rimworld.pickupandhaul.main");
 #if DEBUG
         Harmony.DEBUG = true;
@@ -53,15 +62,22 @@ static class HarmonyPatches
         harmony.Patch(AccessTools.Method(typeof(ThingOwnerUtility), nameof(ThingOwnerUtility.TryGetInnerInteractableThingOwner)),
             prefix: new(typeof(HarmonyPatches), nameof(TryGetInnerInteractableThingOwner)));
 
-        harmony.Patch(AccessTools.Method(typeof(Thing), nameof(Thing.SplitOff)),
-            prefix: new(typeof(HarmonyPatches), nameof(SplitOff)));
 
 
         var methInfo = typeof(Pawn_CarryTracker).GetMethod(
                 "TryDropCarriedThing"
-                , new Type[] { typeof(IntVec3), typeof(ThingPlaceMode), typeof(Thing).MakeByRefType(), typeof(Action<Thing, int>) }
+                , new Type[] { typeof(IntVec3), typeof(ThingPlaceMode), typeof(Thing).MakeByRefType(), typeof(Action<Thing, int>)
+            }
         );
         harmony.Patch(methInfo, postfix: new(typeof(HarmonyPatches), nameof(TryDropCarriedThing)));
+
+        if (ModCompatibilityCheck.VehicleIsActive)
+        {
+            methInfo = assmeblies.SelectMany(v => v.GetTypes()).FirstOrDefault(v => v.Name == "WorkGiver_CarryToVehicle")
+                .GetMethod("JobOnThing", BindingFlags.Instance | BindingFlags.Public);
+            harmony.Patch(methInfo, postfix: new(typeof(HarmonyPatches), nameof(JobOnThing_override_vehicle_pack_job)));
+        }
+
 
 
         harmony.PatchAll();
@@ -69,13 +85,27 @@ static class HarmonyPatches
         Verse.Log.Message("PickUpAndHaul v1.1.2¼ welcomes you to RimWorld with pointless logspam.");
     }
 
-   
 
-    public static bool SplitOff(Thing __instance, int count)
+    public static void JobOnThing_override_vehicle_pack_job(ref Job __result, Pawn pawn, Thing t, bool forced)
     {
-        Log.Message("THING SPLIT: " + __instance + " " + count);
-        return true;
+        Log.Message("OVERRIDEN!");
+        if (__result != null)
+        {
+            WorkGiver_HaulToInventory haulMoreWork = DefDatabase<WorkGiverDef>.AllDefsListForReading.First(wg => wg.Worker is WorkGiver_HaulToInventory).Worker as WorkGiver_HaulToInventory;
+            
+            var thingBeingHauled = __result.targetA.Thing;
+            Log.Message("CHECKING IF BETTER JOB EXISTS for ? " + thingBeingHauled);
+            var job = haulMoreWork.JobOnThing(pawn, thingBeingHauled, forced);
+
+            Log.Message("RET JOB: " + job);
+            if (job != null && job.def == PickUpAndHaulJobDefOf.HaulToInventory)
+            {
+                __result = job;
+            }
+        }
+
     }
+
 
     public static void TryDropCarriedThing(IntVec3 dropLoc, ThingPlaceMode mode, Thing resultingThing, Pawn_CarryTracker __instance, ref bool __result)
     {
@@ -83,31 +113,34 @@ static class HarmonyPatches
             return;
         var thing = resultingThing;
 
-        if (thing != null && thing is ThingWithComps thingWithComps)
+        if (ModCompatibilityCheck.CombatExtendedIsActive)
         {
-
-            var gun = new GunProxy(thingWithComps);
-            var comp = gun.CompAmmoUser;
-
-            if (comp != null)
+            if (thing != null && thing is ThingWithComps thingWithComps)
             {
-                if (!CritDestinationsMap.Guns.Contains(thingWithComps))
-                {
-                    Log.Message("DROPPED GUN: " + thing + "Slot group?");
-                    var slogGroup = thing.Map.haulDestinationManager.SlotGroupParentAt(thing.Position);
-                    Log.Message("group: " + slogGroup);
 
-                    if (slogGroup!=null && slogGroup.GetStoreSettings().Priority != StoragePriority.Unstored)
+                var gun = new GunProxy(thingWithComps);
+                var comp = gun.CompAmmoUser;
+
+                if (comp != null)
+                {
+                    if (!CritDestinationsMap.Guns.Contains(thingWithComps))
                     {
-                        Log.Message("ADDING GUN TO LIST: " + thing);
-                        CritDestinationsMap.Guns.Add(thingWithComps);
+                        var slogGroup = thing.Map.haulDestinationManager.SlotGroupParentAt(thing.Position);
+
+
+                        if (slogGroup != null && slogGroup.GetStoreSettings().Priority != StoragePriority.Unstored)
+                        {
+                            
+                            CritDestinationsMap.Guns.Add(thingWithComps);
+                        }
+
                     }
-                        
+
                 }
 
             }
-
         }
+       
 
     }
 
@@ -116,23 +149,31 @@ static class HarmonyPatches
         if (thing is Blueprint)
         {
             /* only for blueprints because I think frames have a 'thing owner' */
-            __result = new HaulThingOwner(thing);
+            __result = new HaulThingOwner(thing, __result);
             return false;
         }
 
-        if (thing is ThingWithComps thingWithComps)
+        if (ModCompatibilityCheck.CombatExtendedIsActive && thing is ThingWithComps thingWithComps)
         {
-            
+
             var gun = new GunProxy(thingWithComps);
             var comp = gun.CompAmmoUser;
 
             if (comp != null)
             {
                 /*is a gun*/
-                __result = new GunThingOwner(thing);
+                __result = new GunThingOwner(thing, __result);
                 return false;
             }
         }
+
+        if (ModCompatibilityCheck.VehicleIsActive && VehiclePawnType.IsAssignableFrom(thing.GetType()))
+        {
+            //Log.Message("GET ThingOwner FOR: " + thing);
+            __result = new VehicleThingOwner(thing, __result);
+            return false;
+        }
+
 
         return true;
     }
@@ -140,17 +181,35 @@ static class HarmonyPatches
 
     private static bool TryFindBestBetterNonSlotGroupStorageFor(ref bool __result, Thing t, Pawn carrier, Map map, StoragePriority currentPriority, Faction faction, out IHaulDestination haulDestination, bool acceptSamePriority = false, bool requiresDestReservation = true)
     {
-        haulDestination = CritDestinationsMap.GetLocationOfMatchingConstructable(carrier, t);
-
-        if (haulDestination != null)
+        if (ModCompatibilityCheck.CombatExtendedIsActive)
         {
-            __result = true;
-            return false;
+            haulDestination = CritDestinationsMap.GetMatchingGunForAmmo(carrier, t);
+            if (haulDestination != null)
+            {
+                __result = true;
+                return false;
+            }
         }
 
-        haulDestination = CritDestinationsMap.GetMatchingGun(carrier, t);
+
+        if (ModCompatibilityCheck.VehicleIsActive)
+        {
+            haulDestination = CritDestinationsMap.GetMatchingVehiclePackagingForHaulable(carrier, t);
+            if (haulDestination != null)
+            {
+                
+                __result = true;
+                return false;
+            }
+        }
+
+
+
+        haulDestination = CritDestinationsMap.GetMatchingConstructableForMaterial(carrier, t);
+
         if (haulDestination != null)
         {
+            
             __result = true;
             return false;
         }

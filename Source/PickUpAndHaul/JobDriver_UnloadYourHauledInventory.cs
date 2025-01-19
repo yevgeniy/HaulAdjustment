@@ -1,4 +1,6 @@
-﻿using System.Linq;
+﻿using HarmonyLib;
+using System.Linq;
+using System.Reflection;
 using UnityEngine;
 using Verse;
 
@@ -9,6 +11,8 @@ public class JobDriver_UnloadYourHauledInventory : JobDriver
 	private int _countToDrop = -1;
 	private int _unloadDuration = 3;
 	private int? _progressBarDelay=null;
+    
+	private static FieldInfo countToTransferFieldInfo = AccessTools.Field(typeof(TransferableOneWay), "countToTransfer");
 
 
     public override void ExposeData()
@@ -49,39 +53,37 @@ public class JobDriver_UnloadYourHauledInventory : JobDriver
 		
 
 		var depositToContainer= Toils_Haul.DepositHauledThingInContainer(TargetIndex.B, TargetIndex.None);
-		var resetProgressTicks= new Toil
-        {
-            initAction = () =>
-            {
-				Log.Message("RESET PROGRESS BAR");
-                
-            }
-        };
         var showProgressBar = ShowProgressBar();
 
 
 
 		yield return Toils_Jump.JumpIf(depositToContainer, () =>
 		{
-			Log.Message("IS THERE NO PROGRESS BAR? " + (_progressBarDelay == null));
 			return _progressBarDelay == null;
         });
-		yield return resetProgressTicks;
+
 		yield return new Toil
 		{
+			debugName = "SET PROGRESSBAR DELAY",
 			initAction = () =>
 			{
-				Log.Message("SETTING PROGRESS BAR DELAY");
+				
 				showProgressBar.defaultDuration = _progressBarDelay.Value;
             }
 		};
 		yield return showProgressBar;
+
+		if ( ModCompatibilityCheck.VehicleIsActive)
+		{
+            yield return Toils_Jump.JumpIf(depositToContainer, () => DestinationNotVehicle());
+            yield return DepositToVehicle();
+            yield return Toils_Jump.Jump(releaseReservation);
+        }
+
         yield return depositToContainer;
-		yield return Toils_Haul.JumpToCarryToNextContainerIfPossible(carryToContainer, TargetIndex.B);
-		// Equivalent to jumping out of the else block
 		yield return Toils_Jump.Jump(releaseReservation);
 
-		// Equivalent to else
+		
 		yield return carryToCell;
 		yield return Toils_Haul.PlaceHauledThingInCell(TargetIndex.B, carryToCell, true);
 
@@ -91,7 +93,44 @@ public class JobDriver_UnloadYourHauledInventory : JobDriver
 		yield return Toils_Jump.Jump(begin);
 	}
 
-	private bool TargetIsCell() => !TargetB.HasThing;
+    private Toil DepositToVehicle()
+    {
+        return new Toil
+        {
+            initAction = () =>
+            {
+				var item = job.targetA.Thing;
+                if (item is null || item.stackCount == 0)
+                {
+                    pawn.jobs.EndCurrentJob(JobCondition.Incompletable, true);
+                }
+                else
+                {
+                    int stackCount = item.stackCount; //store before transfer for transferable recache
+					var vehicle = new VehiclePawnProxy(job.targetB.Thing as Pawn);
+                    int result = vehicle.AddOrTransfer(item, stackCount);
+                    TransferableOneWay transferable = VehiclePawnProxy.GetTransferable(vehicle.CargoToLoad, item);
+                    if (transferable != null)
+                    {
+                        int count = transferable.CountToTransfer - stackCount;
+                        countToTransferFieldInfo.SetValue(transferable, count);
+                        if (transferable.CountToTransfer <= 0)
+                        {
+                            vehicle.CargoToLoad.Remove(transferable);
+                        }
+                    }
+                }
+            }
+        };
+    }
+
+    private bool DestinationNotVehicle()
+    {
+		return HarmonyPatches.VehiclePawnType.IsAssignableFrom(job.targetB.Thing.GetType()) 
+			== false;
+    }
+
+    private bool TargetIsCell() => !TargetB.HasThing;
 
 	private Toil ShowProgressBar()
 	{
@@ -207,10 +246,11 @@ public class JobDriver_UnloadYourHauledInventory : JobDriver
 				{
 					job.SetTarget(TargetIndex.A, unloadableThing.Thing);
                     
-					var thing = ExtractThing(destination, out var _, out countNeeded, out _progressBarDelay);
+					var destinationThing = ExtractThing(destination, out var _, out countNeeded, out _progressBarDelay);
+					Log.Message("DESTINATION: " + destinationThing + " " + cell + " " + destination);
                     if (cell == IntVec3.Invalid)
 					{	
-                        job.SetTarget(TargetIndex.B, thing);
+                        job.SetTarget(TargetIndex.B, destinationThing);
 					}
 					else
 					{

@@ -1,6 +1,8 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Reflection;
+using System.Security.Principal;
 using System.Text;
 using System.Threading.Tasks;
 using UnityEngine;
@@ -18,6 +20,16 @@ namespace PickUpAndHaul
         public static HashSet<ThingWithComps> Guns = new HashSet<ThingWithComps>();
 
         public static StatDef ReloadSpeed = null;
+
+        public static class VehicleReservationType
+        {
+            public const string LoadVehicle = "LoadVehicle";
+            public const string LoadTurret = "LoadVehicleForTurret";
+            public const string Refuel = "Refuel";
+            public const string Repair = "Repair";
+            public const string Upgrade = "Upgrade";
+            public const string LoadUpgradeMaterials = "LoadUpgradeMaterials";
+        }
 
         static CritDestinationsMap()
         {
@@ -39,10 +51,9 @@ namespace PickUpAndHaul
 
             if (Find.TickManager.TicksGame % 2000 == 0)
             {
-                Log.Message("LENGTH OF CONSTRUCTABLES: " + Constructables.Count());
                 Constructables.RemoveWhere(v => v == null || !v.Spawned);
 
-                Log.Message("LENGTH OF GUNS: " + Guns.Count());
+                
                 Guns.RemoveWhere(v => v == null || !v.Spawned);
             }
         }
@@ -61,12 +72,73 @@ namespace PickUpAndHaul
                 Guns = new HashSet<ThingWithComps>();
         }
 
-        public static IHaulDestination GetMatchingGun(Pawn pawn, Thing thing)
+
+        private static IEnumerable<object> GetVehicleListers(Map map, string listerName)
         {
+            if (map == null)
+                return null;
+
+            var assemblies = AppDomain.CurrentDomain.GetAssemblies();
+
+            var vehicleReservationManagerType = assemblies.SelectMany(v => v.GetTypes()).FirstOrDefault(v => v.Name == "VehicleReservationManager");
+
+            if (vehicleReservationManagerType != null)
+            {
+
+                var vehicleReservationManager = map.GetComponent(vehicleReservationManagerType);
+
+                var vehicleListersMeth = vehicleReservationManagerType.GetMethod("VehicleListers", BindingFlags.Public | BindingFlags.Instance);
+
+                var listers = vehicleListersMeth.Invoke(vehicleReservationManager, new object[] { listerName });
+
+                return listers as IEnumerable<object>;
+
+            }
+
+
+            return null;
+        }
+
+        public static IHaulDestination GetMatchingVehiclePackagingForHaulable(Pawn pawn, Thing thing)
+        {
+            if (pawn == null)
+                return null;
+
+            var listers = GetVehicleListers(pawn.Map, VehicleReservationType.LoadVehicle);
+            
+            if (listers == null)
+                return null;
+
+            foreach (var i in listers)
+            {
+                var vehicle = new VehiclePawnProxy(i as Pawn);
+
+                if (pawn != null && pawn.Faction != vehicle.Faction)
+                {
+                    continue;
+                }
+
+                if (vehicle.CanAccept(thing, out var howMuch))
+                {
+                    return new ThingHaulDestination(i as Thing)
+                    {
+                        CountNeeded = howMuch,
+                        ProgressBarDelay = 25,
+                    };
+                }
+
+            }
+
+            return null;
+        }
+
+        public static IHaulDestination GetMatchingGunForAmmo(Pawn pawn, Thing thing)
+        {
+            if (pawn == null)
+                return null;
 
             foreach (var i in Guns.ToList())
             {
-                //Log.Message("CONSIDERING GUN TO RELOAD: " + i);
                 if (i == null)
                     continue;
 
@@ -82,7 +154,7 @@ namespace PickUpAndHaul
                 {
                     return null;
                 }
-                
+
                 if (ammoDef.defName != thing.def.defName)
                 {
                     continue;
@@ -92,13 +164,11 @@ namespace PickUpAndHaul
 
                 if (howMuchNeededForFullReload == 0)
                 {
-                    /*this gun is already fully loaded*/
-                    //Log.Message("REMOVING GUN SINCE IT HAS FULL AMMO: " + i);
                     Guns.Remove(i);
                     continue;
                 }
 
-                return new ThingHaulDestination(i)
+                return new GunThingHaulDestination(i)
                 {
                     CountNeeded = howMuchNeededForFullReload,
                     ProgressBarDelay = pawn != null ? Mathf.CeilToInt(gun.ReloadTime.SecondsToTicks() / pawn.GetStatValue(ReloadSpeed)) : null
@@ -109,9 +179,11 @@ namespace PickUpAndHaul
         }
 
 
-        public static IHaulDestination GetLocationOfMatchingConstructable(Pawn pawn, Thing thing)
+        public static IHaulDestination GetMatchingConstructableForMaterial(Pawn pawn, Thing thing)
         {
-            
+            if (pawn == null)
+                return null;
+
             foreach (var i in Constructables)
             {
                 if (i == null)
@@ -123,7 +195,7 @@ namespace PickUpAndHaul
                     continue;
                 }
 
-                if (pawn!=null && i.Faction != pawn.Faction)
+                if (pawn != null && i.Faction != pawn.Faction)
                 {
                     continue;
                 }
@@ -136,7 +208,10 @@ namespace PickUpAndHaul
                 var numberOfThisThingNeeded = project.ThingCountNeeded(thing.def);
                 if (numberOfThisThingNeeded > 0)
                 {
-                    return new ThingHaulDestination(i);
+                    return new ThingHaulDestination(i)
+                    {
+                        CountNeeded = numberOfThisThingNeeded
+                    };
                 }
             }
 
@@ -208,14 +283,22 @@ namespace PickUpAndHaul
 
     public class HaulThingOwner : ThingOwner
     {
-        public HaulThingOwner(Thing t)
+        public HaulThingOwner(Thing t, ThingOwner orig)
         {
             Thing = t;
+            Original = orig;
         }
 
-        public override int Count => throw new NotImplementedException();
+        public override int Count
+        {
+            get
+            {
+                return Original.Count;
+            }
+        }
 
         public Thing Thing { get; set; }
+        public ThingOwner Original { get; }
 
         public override int GetCountCanAccept(Thing item, bool canMergeWithExistingStacks = true)
         {
@@ -228,27 +311,27 @@ namespace PickUpAndHaul
 
         public override int IndexOf(Thing item)
         {
-            throw new NotImplementedException();
+            return Original.IndexOf(item);
         }
 
         public override bool Remove(Thing item)
         {
-            throw new NotImplementedException();
+            return Original.Remove(item);
         }
 
         public override int TryAdd(Thing item, int count, bool canMergeWithExistingStacks = true)
         {
-            throw new NotImplementedException();
+            return Original.TryAdd(item, count, canMergeWithExistingStacks);
         }
 
         public override bool TryAdd(Thing item, bool canMergeWithExistingStacks = true)
         {
-            throw new NotImplementedException();
+            return Original.TryAdd(item, canMergeWithExistingStacks);
         }
 
         public override Thing GetAt(int index)
         {
-            throw new NotImplementedException();
+            return Original.GetAt(index);
         }
     }
 
@@ -273,9 +356,10 @@ namespace PickUpAndHaul
 
         }
     }
+
     public class GunThingOwner : HaulThingOwner
     {
-        public GunThingOwner(Thing t) : base(t)
+        public GunThingOwner(Thing t, ThingOwner orig) : base(t, orig)
         {
         }
 
@@ -302,7 +386,7 @@ namespace PickUpAndHaul
             //Log.Message("GET COUNT CAN ACCEPT: " + stuff.defName);
             if (_countCanAccept != null)
             {
-              //  Log.Message(_countCanAccept.Value + " (cached)");
+                //  Log.Message(_countCanAccept.Value + " (cached)");
                 return _countCanAccept.Value;
             }
 
@@ -347,6 +431,68 @@ namespace PickUpAndHaul
 
         public override bool TryAdd(Thing item, bool canMergeWithExistingStacks = true)
         {
+            return this.TryAdd(item, item.stackCount, canMergeWithExistingStacks) > 0;
+        }
+    }
+
+    public class VehicleThingHaulDestination : ThingHaulDestination
+    {
+        public VehicleThingHaulDestination(Thing t) : base(t)
+        {
+        }
+
+        public override bool Accepts(Thing t)
+        {
+            Log.Message("ACCEPT? " + t + " for: " + Thing);
+
+            var vehicle = new VehiclePawnProxy(Thing as Pawn);
+
+            if (vehicle.CanAccept(t, out var _))
+            {
+                Log.Message("YES");
+                return true;
+            }
+            return false;
+        }
+    }
+    public class VehicleThingOwner : HaulThingOwner
+    {
+        public VehicleThingOwner(Thing t, ThingOwner owner) : base(t, owner)
+        {
+        }
+
+        public Map Map => Thing.Map;
+
+        public override int GetCountCanAccept(Thing item, bool canMergeWithExistingStacks = true)
+        {
+            Log.Message("GET COUNT CAN ACCET: " + item + " for: " + Thing);
+            var vehicle = new VehiclePawnProxy(Thing as Pawn);
+
+            if (vehicle.CanAccept(item, out var howMuch))
+            {
+                Log.Message(howMuch.Value.ToString());
+                return howMuch.Value;
+            }
+            return 0;
+
+        }
+
+        public override int TryAdd(Thing item, int count, bool canMergeWithExistingStacks = true)
+        {
+            /*TODO: not used? */
+
+            Log.Message("TRY ADDING: " + item + " " + count);
+            var vehicle = new VehiclePawnProxy(Thing as Pawn);
+
+            int result = vehicle.AddOrTransfer(item, count);
+
+            return result;
+        }
+
+        public override bool TryAdd(Thing item, bool canMergeWithExistingStacks = true)
+        {
+            /*TODO: not used? */
+
             return this.TryAdd(item, item.stackCount, canMergeWithExistingStacks) > 0;
         }
     }
