@@ -21,6 +21,9 @@ namespace PickUpAndHaul
 
         public static StatDef ReloadSpeed = null;
 
+        public static Type VehicleReservationManagerType = null;
+        public static MethodInfo VehicleListersMeth = null;
+
         public static class VehicleReservationType
         {
             public const string LoadVehicle = "LoadVehicle";
@@ -33,10 +36,21 @@ namespace PickUpAndHaul
 
         static CritDestinationsMap()
         {
+            var assemblies = AppDomain.CurrentDomain.GetAssemblies();
+
             if (ModCompatibilityCheck.CombatExtendedIsActive)
             {
                 ReloadSpeed = StatDef.Named("ReloadSpeed");
             }
+
+
+            if (ModCompatibilityCheck.VehicleIsActive)
+            {
+                
+                VehicleReservationManagerType = assemblies.SelectMany(v => v.GetTypes()).FirstOrDefault(v => v.Name == "VehicleReservationManager");
+                VehicleListersMeth = VehicleReservationManagerType.GetMethod("VehicleListers", BindingFlags.Public | BindingFlags.Instance);
+            }
+            
         }
 
         public CritDestinationsMap(Map map) : base(map)
@@ -53,7 +67,7 @@ namespace PickUpAndHaul
             {
                 Constructables.RemoveWhere(v => v == null || !v.Spawned);
 
-                
+
                 Guns.RemoveWhere(v => v == null || !v.Spawned);
             }
         }
@@ -73,30 +87,17 @@ namespace PickUpAndHaul
         }
 
 
+
+
         private static IEnumerable<object> GetVehicleListers(Map map, string listerName)
         {
             if (map == null)
                 return null;
 
-            var assemblies = AppDomain.CurrentDomain.GetAssemblies();
+            var vehicleReservationManager = map.GetComponent(VehicleReservationManagerType);
+            var listers = VehicleListersMeth.Invoke(vehicleReservationManager, new object[] { listerName });
 
-            var vehicleReservationManagerType = assemblies.SelectMany(v => v.GetTypes()).FirstOrDefault(v => v.Name == "VehicleReservationManager");
-
-            if (vehicleReservationManagerType != null)
-            {
-
-                var vehicleReservationManager = map.GetComponent(vehicleReservationManagerType);
-
-                var vehicleListersMeth = vehicleReservationManagerType.GetMethod("VehicleListers", BindingFlags.Public | BindingFlags.Instance);
-
-                var listers = vehicleListersMeth.Invoke(vehicleReservationManager, new object[] { listerName });
-
-                return listers as IEnumerable<object>;
-
-            }
-
-
-            return null;
+            return listers as IEnumerable<object>;
         }
 
         public static IHaulDestination GetMatchingVehiclePackagingForHaulable(Pawn pawn, Thing thing)
@@ -105,10 +106,12 @@ namespace PickUpAndHaul
                 return null;
 
             var listers = GetVehicleListers(pawn.Map, VehicleReservationType.LoadVehicle);
-            
+
             if (listers == null)
                 return null;
 
+
+            Log.Message("VEHICLES: " + listers.Count());
             foreach (var i in listers)
             {
                 var vehicle = new VehiclePawnProxy(i as Pawn);
@@ -137,6 +140,8 @@ namespace PickUpAndHaul
             if (pawn == null)
                 return null;
 
+
+            Log.Message("GUNS: " + Guns.Count);
             foreach (var i in Guns.ToList())
             {
                 if (i == null)
@@ -184,6 +189,7 @@ namespace PickUpAndHaul
             if (pawn == null)
                 return null;
 
+            Log.Message("CONSTRUCTS: " + Constructables.Count);
             foreach (var i in Constructables)
             {
                 if (i == null)

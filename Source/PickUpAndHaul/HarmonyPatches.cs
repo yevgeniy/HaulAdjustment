@@ -88,7 +88,6 @@ static class HarmonyPatches
 
     public static void JobOnThing_override_vehicle_pack_job(ref Job __result, Pawn pawn, Thing t, bool forced)
     {
-        Log.Message("OVERRIDEN!");
         if (__result != null)
         {
             WorkGiver_HaulToInventory haulMoreWork = DefDatabase<WorkGiverDef>.AllDefsListForReading.First(wg => wg.Worker is WorkGiver_HaulToInventory).Worker as WorkGiver_HaulToInventory;
@@ -181,6 +180,8 @@ static class HarmonyPatches
 
     private static bool TryFindBestBetterNonSlotGroupStorageFor(ref bool __result, Thing t, Pawn carrier, Map map, StoragePriority currentPriority, Faction faction, out IHaulDestination haulDestination, bool acceptSamePriority = false, bool requiresDestReservation = true)
     {
+        haulDestination = null;
+
         if (ModCompatibilityCheck.CombatExtendedIsActive)
         {
             haulDestination = CritDestinationsMap.GetMatchingGunForAmmo(carrier, t);
