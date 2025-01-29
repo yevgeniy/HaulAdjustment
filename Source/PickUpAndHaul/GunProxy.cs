@@ -29,15 +29,20 @@ namespace PickUpAndHaul
             }
         }
         ThingComp _compammouser;
+        MethodInfo _compAmmoUserGenMethod;
         public ThingComp CompAmmoUser
         {
             get
             {
                 if (_compammouser == null)
                 {
-                    var methinfo = typeof(ThingWithComps).GetMethod("GetComp");
-                    var genMethod = methinfo.MakeGenericMethod(CompAmmoUserType);
-                    var comp = genMethod.Invoke(Thing, null);
+                    if (_compAmmoUserGenMethod==null)
+                    {
+                        var methinfo = typeof(ThingWithComps).GetMethod("GetComp");
+                        _compAmmoUserGenMethod = methinfo.MakeGenericMethod(CompAmmoUserType);
+                    }
+                    
+                    var comp = _compAmmoUserGenMethod.Invoke(Thing, null);
                     _compammouser = comp as ThingComp;
                 }
                 return _compammouser;

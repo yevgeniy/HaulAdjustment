@@ -195,7 +195,7 @@ static class HarmonyPatches
 
         if (ModCompatibilityCheck.VehicleIsActive)
         {
-            haulDestination = CritDestinationsMap.GetMatchingVehiclePackagingForHaulable(carrier, t);
+            haulDestination = CritDestinationsMap.GetMatchingVehiclePackagingForItem(carrier, t);
             if (haulDestination != null)
             {
                 

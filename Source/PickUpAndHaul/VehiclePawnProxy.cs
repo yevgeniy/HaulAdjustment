@@ -26,7 +26,8 @@ namespace PickUpAndHaul
             }
         }
 
-        private Assembly[] assemblies => AppDomain.CurrentDomain.GetAssemblies();
+        public static Assembly[] Assemblies => AppDomain.CurrentDomain.GetAssemblies();
+        public static Type VehiclePawnType = Assemblies.SelectMany(v => v.GetTypes()).FirstOrDefault(v => v.Name == "VehiclePawn");
 
         public List<TransferableOneWay> CargoToLoad
         {

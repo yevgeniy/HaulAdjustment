@@ -3,8 +3,27 @@
 namespace PickUpAndHaul;
 public class HoldMultipleThings_Support
 {
-	// ReSharper disable SuspiciousTypeConversion.Global
-	public static bool CapacityAt(Thing thing, IntVec3 storeCell, Map map, out int capacity)
+    public static bool OverAllowedGearCapacity(Pawn pawn) => MassUtility.GearMass(pawn) / MassUtility.Capacity(pawn) >= Settings.MaximumOccupiedCapacityToConsiderHauling;
+    public static int CapacityAt(Thing thing, IntVec3 storeCell, Map map)
+    {
+        if (HoldMultipleThings_Support.CapacityAt(thing, storeCell, map, out var capacity))
+        {
+            Log.Message($"Found external capacity of {capacity}");
+            return capacity;
+        }
+
+        capacity = thing.def.stackLimit;
+
+        var preExistingThing = map.thingGrid.ThingAt(storeCell, thing.def);
+        if (preExistingThing != null)
+        {
+            capacity = thing.def.stackLimit - preExistingThing.stackCount;
+        }
+
+        return capacity;
+    }
+    // ReSharper disable SuspiciousTypeConversion.Global
+    public static bool CapacityAt(Thing thing, IntVec3 storeCell, Map map, out int capacity)
 	{
 		capacity = 0;
 

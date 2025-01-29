@@ -8,6 +8,7 @@ using System.Threading.Tasks;
 using UnityEngine;
 using UnityStandardAssets.ImageEffects;
 using Verse;
+using Verse.AI;
 
 namespace PickUpAndHaul
 {
@@ -21,22 +22,15 @@ namespace PickUpAndHaul
 
         public static StatDef ReloadSpeed = null;
 
-        public static Type VehicleReservationManagerType = null;
-        public static MethodInfo VehicleListersMeth = null;
 
-        public static class VehicleReservationType
-        {
-            public const string LoadVehicle = "LoadVehicle";
-            public const string LoadTurret = "LoadVehicleForTurret";
-            public const string Refuel = "Refuel";
-            public const string Repair = "Repair";
-            public const string Upgrade = "Upgrade";
-            public const string LoadUpgradeMaterials = "LoadUpgradeMaterials";
-        }
+        /*We need to keep track how many things are being hauled to
+         * vehicle to make propper count of still needed thigns */
+        public static Dictionary<Job, Dictionary<Pawn/*vehicle*/, Dictionary<Def, int>>> ToVehicleHauling = new ();
+
 
         static CritDestinationsMap()
         {
-            var assemblies = AppDomain.CurrentDomain.GetAssemblies();
+            
 
             if (ModCompatibilityCheck.CombatExtendedIsActive)
             {
@@ -44,17 +38,75 @@ namespace PickUpAndHaul
             }
 
 
-            if (ModCompatibilityCheck.VehicleIsActive)
-            {
-                
-                VehicleReservationManagerType = assemblies.SelectMany(v => v.GetTypes()).FirstOrDefault(v => v.Name == "VehicleReservationManager");
-                VehicleListersMeth = VehicleReservationManagerType.GetMethod("VehicleListers", BindingFlags.Public | BindingFlags.Instance);
-            }
-            
         }
 
         public CritDestinationsMap(Map map) : base(map)
         {
+
+        }
+
+        public static void AddVehicleHaul(Job job, Pawn vehicle, Thing item, int count)
+        {
+            Log.Message($"hauling to vehicle {vehicle} {item} {count}");
+
+            if (!ToVehicleHauling.ContainsKey(job))
+            {
+                ToVehicleHauling[job] = new Dictionary<Pawn, Dictionary<Def, int>>();
+            }
+
+            if (!ToVehicleHauling[job].ContainsKey(vehicle))
+            {
+                ToVehicleHauling[job][vehicle] = new Dictionary<Def, int>();
+            }
+
+            if (!ToVehicleHauling[job][vehicle].ContainsKey(item.def))
+            {
+                ToVehicleHauling[job][vehicle][item.def] = 0;
+            }
+
+            ToVehicleHauling[job][vehicle][item.def] += count;
+
+            
+        }
+        private static int GetAlreadyHauling(Pawn vehicle, Def itemDef)
+        {
+            int count = 0;
+            foreach (var (job, byVehicle) in ToVehicleHauling)
+            {
+                
+                if (byVehicle.TryGetValue(vehicle, out var byItem))
+                {
+                    if (byItem.TryGetValue(itemDef, out var c))
+                    {
+                        count += c;
+                    }
+                }
+
+            }
+            return count;
+
+        }
+        public static void JustLoaded(Job job, Pawn vehicle, Thing item, int count)
+        {
+            if (!ToVehicleHauling.TryGetValue(job, out var byvehicle))
+            {
+                Log.Message("COULD NOT FIND job-vehicle");
+            }
+            if (!byvehicle.TryGetValue(vehicle, out var byitem))
+            {
+                Log.Message("COULD NOT FIND vehicle-item");
+            }
+            if (!byitem.TryGetValue(item.def, out var c) )
+            {
+                Log.Message("COUNT NOT FIND item-count");
+            }
+            byitem[item.def] -= count;
+        }
+        public static void RemoveVehicleHaul(Job job)
+        {
+            Log.Message($"removing hauling record");
+
+            ToVehicleHauling.Remove(job);
         }
 
 
@@ -78,40 +130,30 @@ namespace PickUpAndHaul
 
             Scribe_Collections.Look(ref Constructables, "nimm-crit-constructables", LookMode.Reference);
             Scribe_Collections.Look(ref Guns, "nimm-crit-guns", LookMode.Reference);
+            //Scribe_Collections.Look(ref ToVehicleHauling, "nimm-veh-haul", LookMode.Reference);
+
 
             if (Constructables == null)
                 Constructables = new HashSet<Thing>();
 
             if (Guns == null)
                 Guns = new HashSet<ThingWithComps>();
+
+            if (ToVehicleHauling == null)
+                ToVehicleHauling = new Dictionary<Job, Dictionary<Pawn, Dictionary<Def, int>>>();
         }
 
-
-
-
-        private static IEnumerable<object> GetVehicleListers(Map map, string listerName)
-        {
-            if (map == null)
-                return null;
-
-            var vehicleReservationManager = map.GetComponent(VehicleReservationManagerType);
-            var listers = VehicleListersMeth.Invoke(vehicleReservationManager, new object[] { listerName });
-
-            return listers as IEnumerable<object>;
-        }
-
-        public static IHaulDestination GetMatchingVehiclePackagingForHaulable(Pawn pawn, Thing thing)
+        public static IHaulDestination GetMatchingVehiclePackagingForItem(Pawn pawn, Thing thing)
         {
             if (pawn == null)
                 return null;
 
-            var listers = GetVehicleListers(pawn.Map, VehicleReservationType.LoadVehicle);
+            var listers = Utils.GetVehiclePackingListers(pawn.Map);
 
             if (listers == null)
                 return null;
 
 
-            Log.Message("VEHICLES: " + listers.Count());
             foreach (var i in listers)
             {
                 var vehicle = new VehiclePawnProxy(i as Pawn);
@@ -123,17 +165,27 @@ namespace PickUpAndHaul
 
                 if (vehicle.CanAccept(thing, out var howMuch))
                 {
-                    return new ThingHaulDestination(i as Thing)
-                    {
-                        CountNeeded = howMuch,
-                        ProgressBarDelay = 25,
-                    };
+                    Log.Message($"Vehicle {i} can accept: {thing} of amount: {howMuch}");
+                    
+                    var ah= GetAlreadyHauling(i as Pawn, thing.def);
+                    Log.Message($"already houling {ah}");
+
+                    howMuch -= ah;
+
+                    if (howMuch > 0)
+                        return new CriticalThingHaulDestination(i as Thing)
+                        {
+                            CountNeeded = howMuch,
+                            ProgressBarDelay = 25,
+                        };
                 }
 
             }
 
             return null;
         }
+
+
 
         public static IHaulDestination GetMatchingGunForAmmo(Pawn pawn, Thing thing)
         {
@@ -214,7 +266,7 @@ namespace PickUpAndHaul
                 var numberOfThisThingNeeded = project.ThingCountNeeded(thing.def);
                 if (numberOfThisThingNeeded > 0)
                 {
-                    return new ThingHaulDestination(i)
+                    return new CriticalThingHaulDestination(i)
                     {
                         CountNeeded = numberOfThisThingNeeded
                     };
@@ -224,14 +276,15 @@ namespace PickUpAndHaul
             return null;
         }
 
+        
     }
 
 
-    public class ThingHaulDestination : IHaulDestination
+    public class CriticalThingHaulDestination : IHaulDestination
     {
         private Thing _thing;
 
-        public ThingHaulDestination(Thing t)
+        public CriticalThingHaulDestination(Thing t)
         {
             _thing = t;
         }
@@ -240,7 +293,7 @@ namespace PickUpAndHaul
         public int? CountNeeded = null;
         public int? ProgressBarDelay = null;
 
-        public static explicit operator Thing(ThingHaulDestination haulableDestination)
+        public static explicit operator Thing(CriticalThingHaulDestination haulableDestination)
         {
             return haulableDestination.Thing;
         }
@@ -342,7 +395,7 @@ namespace PickUpAndHaul
     }
 
 
-    public class GunThingHaulDestination : ThingHaulDestination
+    public class GunThingHaulDestination : CriticalThingHaulDestination
     {
         public GunThingHaulDestination(Thing t) : base(t)
         {
@@ -441,7 +494,7 @@ namespace PickUpAndHaul
         }
     }
 
-    public class VehicleThingHaulDestination : ThingHaulDestination
+    public class VehicleThingHaulDestination : CriticalThingHaulDestination
     {
         public VehicleThingHaulDestination(Thing t) : base(t)
         {
