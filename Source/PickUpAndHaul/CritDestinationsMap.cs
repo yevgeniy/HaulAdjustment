@@ -130,7 +130,7 @@ namespace PickUpAndHaul
 
             Scribe_Collections.Look(ref Constructables, "nimm-crit-constructables", LookMode.Reference);
             Scribe_Collections.Look(ref Guns, "nimm-crit-guns", LookMode.Reference);
-            //Scribe_Collections.Look(ref ToVehicleHauling, "nimm-veh-haul", LookMode.Reference);
+            
 
 
             if (Constructables == null)
@@ -211,6 +211,8 @@ namespace PickUpAndHaul
                 {
                     return null;
                 }
+
+                Log.Message("AMMO: " + string.Join(", ", ammoDef.thingCategories.Select(v => v.defName)));
 
                 if (ammoDef.defName != thing.def.defName)
                 {

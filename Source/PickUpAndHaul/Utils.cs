@@ -153,6 +153,7 @@ namespace PickUpAndHaul
                    validator:(i)=> false==seen.Contains(i) && validator(i)
                 );
 
+
             return foundItem != null;
             
         }

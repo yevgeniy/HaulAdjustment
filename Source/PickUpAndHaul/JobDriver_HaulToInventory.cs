@@ -276,6 +276,12 @@ public class JobDriver_HaulToInventory : JobDriver
                     Log.Message("----look at: " + closestThing);
                     Seen.Add(closestThing);
 
+                    if (closestThing.def.thingCategories.Any(v=>v.defName == "StoneChunks") 
+                        && designationManager.DesignationOn(closestThing)?.def!=DesignationDefOf.Haul)
+                    {
+                        continue;
+                    }
+
 
                     if ((center - closestThing.Position).LengthHorizontalSquared > maxDistanceSquared)
                     {
