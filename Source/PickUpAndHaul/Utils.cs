@@ -35,6 +35,11 @@ namespace PickUpAndHaul
             return listers as IEnumerable<object>;
         }
 
+        public static CompHauledToInventory GetHaulInventoryComp(this Pawn pawn)
+        {
+            pawn.TryGetComp<CompHauledToInventory>(out var comp);
+            return comp;
+        }
 
         public class ThingPositionComparer : IComparer<Thing>
         {
@@ -75,7 +80,8 @@ namespace PickUpAndHaul
                 {
                     Log.Message("----dest is cell: " + targetCell);
                     destinationTarget = new LocalTargetInfo(targetCell);
-                    count = HoldMultipleThings_Support.CapacityAt(thing, targetCell, map);
+                    count = HoldMultipleThings_Support.CapacityAt(pawn, thing, targetCell, map);
+                    Log.Message("----count: " + count);
                     return true;
 
                     /* TODO: i want to know why we hate hooper jobs so much */
@@ -98,6 +104,7 @@ namespace PickUpAndHaul
                     Log.Message("----dest is a thing with container: " + destinationAsThing);
                     destinationTarget = new LocalTargetInfo(destinationAsThing);
                     count = nonSlotGroupThingOwner.GetCountCanAccept(thing);
+                    Log.Message("----count: " + count);
                     progressBarDelay = progBarDel;
                     return true;
                 }
@@ -150,12 +157,13 @@ namespace PickUpAndHaul
                    ThingRequest.ForGroup(ThingRequestGroup.HaulableEver),
                    PathEndMode.Touch,
                    TraverseParms.For(pawn),
-                   validator:(i)=> false==seen.Contains(i) && validator(i)
+                   maxDistance: 12,
+                   validator: (i) => false == seen.Contains(i) && validator(i)
                 );
 
 
             return foundItem != null;
-            
+
         }
 
     }

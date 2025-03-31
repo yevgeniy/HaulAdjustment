@@ -36,31 +36,35 @@ public class JobDriver_UnloadYourHauledInventory : JobDriver
         {
             CritDestinationsMap.RemoveVehicleHaul(job);
         });
-        
 
+
+        Toil beginWait = Toils_General.Wait(2);
+        Toil endWait = Toils_General.Wait(2);
         Toil successToil = new()
         {
             initAction = () =>
             {
                 Log.Message($"END JOB DRIVER for pawn {pawn}");
-                EndJobWith(JobCondition.Succeeded);
+                //EndJobWith(JobCondition.Succeeded);
                 Log.Message($"END END");
             }
         };
-        Toil endWait = Toils_General.Wait(2);
 
-        Toil findNextDestinationForFirstItem = FindNextDestinationForFirstItem(successToil);
-        Toil pullItemFromInventoryToil = PullItemFromInventoryToil(findNextDestinationForFirstItem);
+
+        Toil findNextDestinationForFirstItem = FindNextDestinationForFirstItem(beginWait, successToil);
+        Toil pullItemFromInventoryToil = PullItemFromInventoryToil(beginWait);
         Toil carryToCellToil = Toils_Haul.CarryHauledThingToCell(TargetIndex.B);
         Toil carryToContainerToil = Toils_Haul.CarryHauledThingToContainer();
         Toil showProgressBarToil = ShowProgressBarToil();
         Toil depositToContainerToil = Toils_Haul.DepositHauledThingInContainer(TargetIndex.B, TargetIndex.None);
         Toil releaseReservation = ReleaseReservation();
 
+        yield return beginWait;
         yield return findNextDestinationForFirstItem;
         yield return pullItemFromInventoryToil;
 
-        yield return Toils_Jump.JumpIf(carryToCellToil, () => false == job.GetTarget(TargetIndex.B).HasThing);
+        var notAContainer = Toils_General.Wait(2);
+        yield return Toils_Jump.JumpIf(notAContainer, () => false == job.GetTarget(TargetIndex.B).HasThing);
 
         yield return carryToContainerToil;
         yield return Toils_Construct.MakeSolidThingFromBlueprintIfNecessary(TargetIndex.B);
@@ -79,131 +83,135 @@ public class JobDriver_UnloadYourHauledInventory : JobDriver
             }
         };
         yield return showProgressBarToil;
+        var notAVehicle = Toils_General.Wait(2);
         if (ModCompatibilityCheck.VehicleIsActive)
         {
-            yield return Toils_Jump.JumpIf(depositToContainerToil, () => DestinationNotVehicle());
+            yield return Toils_Jump.JumpIf(notAVehicle, () => DestinationNotVehicle());
             yield return DepositToVehicle();
             yield return Toils_Jump.Jump(releaseReservation);
         }
+
+        yield return notAVehicle;
         yield return depositToContainerToil;
         yield return Toils_Jump.Jump(releaseReservation);
 
 
+        yield return notAContainer;
         yield return carryToCellToil;
+        
         yield return Toils_Haul.PlaceHauledThingInCell(TargetIndex.B, carryToCellToil, true);
 
 
 
         yield return releaseReservation;
-        yield return Toils_Jump.Jump(findNextDestinationForFirstItem);
+        yield return Toils_General.Do(() =>
+        {
+            if (false == pawn.GetHaulInventoryComp().TryDecrementCountBy(this.job.count))
+            {
+                Log.Message("----SOMETHING WENT TERRIBLY WRONG!  CHECK YOUR LOGIC, BLOCK HEAD!");
+            }
+        });
+        yield return Toils_Jump.Jump(beginWait);
 
         yield return successToil;
         yield return endWait;
 
     }
 
-    private Toil FindNextDestinationForFirstItem(Toil successToil)
+    private Toil FindNextDestinationForFirstItem(Toil beginWait, Toil successToil)
     {
-        Toil t = null;
-        t = new Toil
+        var t = Toils_General.Do(() =>
         {
-            initAction = () =>
+            Log.Message("----FIND NEXT DESTINATION");
+            var haulingComp = pawn.GetHaulInventoryComp();
+
+            if (false==haulingComp.TryGetFirstCount(out var haulingQuantity))
             {
-                Log.Message("----FIND NEXT DESTINATION");
+                /*No more items.  Job is good?*/
 
-                if (job.targetQueueA.Count==0)
+                Log.Message("----No more items hauled");
+                pawn.jobs.curDriver.JumpToToil(successToil);
+                return;
+            }
+
+            haulingComp.TryGetFirstDefName(out var itemDef);
+
+
+            Log.Message("----item: " + itemDef + " current count: " + haulingQuantity);
+
+            var inventoryItem = pawn.inventory.innerContainer.FirstOrDefault(v => v.def == itemDef);
+
+            /*Along the way we may have droped? that item.  Do we still have it in our inventory?*/
+            if (inventoryItem == null || haulingQuantity<=0)
+            {
+                Log.Message("----item not found in inventory for some reason.  Next item.");
+                haulingComp.RemoveFirst();
+                //job.targetQueueA.RemoveAt(0);
+                //job.countQueue.RemoveAt(0);
+
+                pawn.jobs.curDriver.JumpToToil(beginWait);
+                return;
+            }
+
+            var currentPriority = StoragePriority.Unstored;
+
+            if (Utils.FindDestinationForThing(inventoryItem, pawn, pawn.Map,
+                currentPriority, false, out var destinationTarget, out var desiredCountAtDestination, out var _,
+                out int? progressBarDelay)
+            )
+            {
+                /*we may have shelf that can accept 200 rice but rice can only be shouldered at 99 stackLimit*/
+                desiredCountAtDestination = Math.Min(desiredCountAtDestination, itemDef.stackLimit);
+
+                Log.Message("----found place that will accept count: " + destinationTarget + " " + desiredCountAtDestination);
+                var desiredShoulderQuantity = Mathf.Min(desiredCountAtDestination, haulingQuantity);
+
+                Log.Message("----will deliver to that place amount: " + desiredShoulderQuantity);
+
+                job.SetTarget(TargetIndex.A, inventoryItem);
+                job.SetTarget(TargetIndex.B, destinationTarget);
+                job.count = desiredShoulderQuantity;
+
+                /*reserve */
+                if (destinationTarget.HasThing && VehiclePawnProxy.VehiclePawnType.IsAssignableFrom(destinationTarget.Thing.GetType()))
                 {
-                    /*No more items.  Job is good?*/
-
-                    Log.Message("----No more items hauled");
-                    pawn.jobs.curDriver.JumpToToil(successToil);
-                    return;
-                }
-
-                var item = job.targetQueueA[0].Thing;
-                var haulingQuantity = job.countQueue[0];
-
-                Log.Message("----item: " + item + " current count: " + haulingQuantity);
-
-                var inventoryItem = pawn.inventory.innerContainer.FirstOrDefault(v => v.def.defName == item.def.defName);
-
-                /*Along the way we may have droped? that item.  Do we still have it in our inventory?*/
-                if (inventoryItem == null)
-                {
-                    Log.Message("----item not found in inventory for some reason.  Next item.");
-                    job.targetQueueA.RemoveAt(0);
-                    job.countQueue.RemoveAt(0);
-
-                    pawn.jobs.curDriver.SetNextToil(t);
-                    return;
-                }
-
-                var currentPriority = StoragePriority.Unstored;
-
-                if (Utils.FindDestinationForThing(inventoryItem, pawn, pawn.Map,
-                    currentPriority, false, out var destinationTarget, out var desiredCountAtDestination, out var _,
-                    out int? progressBarDelay)
-
-                )
-                {
-                    /*we may have shelf that can accept 200 rice but rice can only be shouldered at 99 stackLimit*/
-                    desiredCountAtDestination = Math.Min(desiredCountAtDestination, item.def.stackLimit);
-                    
-                    Log.Message("----found place that will accept count: " + destinationTarget + " " + desiredCountAtDestination);
-                    var desiredShoulderQuantity = Mathf.Min(desiredCountAtDestination, haulingQuantity);
-
-                    Log.Message("----will deliver to that place amount: " + desiredShoulderQuantity);
-
-                    job.SetTarget(TargetIndex.A, inventoryItem);
-                    job.SetTarget(TargetIndex.B, destinationTarget);
-                    job.count = desiredShoulderQuantity;
-
-                    /*reserve */
-                    if (destinationTarget.HasThing && VehiclePawnProxy.VehiclePawnType.IsAssignableFrom(destinationTarget.Thing.GetType()))
-                    {
-                        CritDestinationsMap.AddVehicleHaul(job, destinationTarget.Thing as Pawn, inventoryItem, job.count);
-                        pawn.Reserve(TargetB, job, 99);
-                    }
-                    else
-                    {
-                        pawn.Reserve(TargetB, job);
-                    }
-
-                    this.progressBarDelay = progressBarDelay;
-
+                    CritDestinationsMap.AddVehicleHaul(job, destinationTarget.Thing as Pawn, inventoryItem, job.count);
+                    pawn.Reserve(TargetB, job, 99);
                 }
                 else
                 {
-                    Log.Message("----could not find destination for item: " + item + " drop all of it");
-
-                    /*there could be lots of stacks of this item in our inventory.  LOL */
-                    do
-                    {
-                        pawn.inventory.innerContainer.TryDrop(inventoryItem, ThingPlaceMode.Near,
-                        inventoryItem.stackCount, out _);
-
-                        if (item.def.stackLimit==1)
-                        {
-                            break;
-                        }
-
-                        inventoryItem = pawn.inventory.innerContainer.FirstOrDefault(v => v.def.defName == item.def.defName);
-                    } while (inventoryItem != null);
-                    
-
-                    job.targetQueueA.RemoveAt(0);
-                    job.countQueue.RemoveAt(0);
-
-                    pawn.jobs.curDriver.SetNextToil(t);
-                    return;
-
-                    
-                    //EndJobWith(JobCondition.Succeeded);
+                    pawn.Reserve(TargetB, job);
                 }
 
+                this.progressBarDelay = progressBarDelay;
+
             }
-        };
-        t.defaultCompleteMode = ToilCompleteMode.Instant;
+            else
+            {
+                Log.Message("----could not find destination for item: " + itemDef + " drop all of it");
+
+                /*there could be lots of stacks of this item in our inventory.  LOL */
+                do
+                {
+                    pawn.inventory.innerContainer.TryDrop(inventoryItem, ThingPlaceMode.Near, inventoryItem.stackCount, out _);
+
+                    inventoryItem = pawn.inventory.innerContainer.FirstOrDefault(v => v.def.defName == itemDef.defName);
+                } while (inventoryItem != null);
+
+                haulingComp.RemoveFirst();
+
+                //job.targetQueueA.RemoveAt(0);
+                //job.countQueue.RemoveAt(0);
+
+                pawn.jobs.curDriver.JumpToToil(beginWait);
+                return;
+
+
+                //EndJobWith(JobCondition.Succeeded);
+            }
+
+        });
+
 
         return t;
     }
@@ -221,7 +229,7 @@ public class JobDriver_UnloadYourHauledInventory : JobDriver
                 }
                 else
                 {
-                    
+
                     int stackCount = item.stackCount; //store before transfer for transferable recache
                     var vehicle = new VehiclePawnProxy(job.targetB.Thing as Pawn);
                     Log.Message("----ADDING TO VEHICLE " + vehicle.Thing + " " + item + " " + stackCount);
@@ -236,7 +244,7 @@ public class JobDriver_UnloadYourHauledInventory : JobDriver
                             vehicle.CargoToLoad.Remove(transferable);
                         }
 
-                        
+
                     }
                     CritDestinationsMap.JustLoaded(job, vehicle.Thing as Pawn, item, stackCount);
                 }
@@ -268,15 +276,15 @@ public class JobDriver_UnloadYourHauledInventory : JobDriver
         {
             initAction = () =>
             {
-                if (pawn.Map.reservationManager.ReservedBy(job.targetA, pawn, pawn.CurJob))
-                {
-                    pawn.Map.reservationManager.Release(job.targetA, pawn, pawn.CurJob);
-                }
+                //if (pawn.Map.reservationManager.ReservedBy(job.targetA, pawn, pawn.CurJob))
+                //{
+                //    pawn.Map.reservationManager.Release(job.targetA, pawn, pawn.CurJob);
+                //}
 
-                if (pawn.Map.reservationManager.ReservedBy(job.targetB, pawn, pawn.CurJob))
-                {
-                    pawn.Map.reservationManager.Release(job.targetB, pawn, pawn.CurJob);
-                }
+                //if (pawn.Map.reservationManager.ReservedBy(job.targetB, pawn, pawn.CurJob))
+                //{
+                //    pawn.Map.reservationManager.Release(job.targetB, pawn, pawn.CurJob);
+                //}
 
             }
         };
@@ -294,23 +302,20 @@ public class JobDriver_UnloadYourHauledInventory : JobDriver
 
                 Log.Message("----PULL ITEM FROM INVENTORY: " + pawn + " " + item + " desired: " + desiredShoulderedCount);
 
-                if (!pawn.health.capacities.CapableOf(PawnCapacityDefOf.Manipulation) || !item.def.EverStorable(false))
-                {
-                    Log.Message($"----Pawn {pawn} incapable of hauling, dropping {item}");
-
-                    job.targetQueueA.RemoveAt(0);
-                    job.countQueue.RemoveAt(0);
-
-                    pawn.jobs.curDriver.JumpToToil(findNextDestinationForFirstItem);
-                    return;
-                }
+                
 
                 var shoulderedCount = 0;
-                Thing shoulderedItem = null;
-
+                var c = 0;
                 while (shoulderedCount < desiredShoulderedCount)
                 {
+                    c++;
+                    if (c>100)
+                    {
+                        Log.Message("TERM LOOP!");
+                        break;
+                    }
                     var inventoryItem = pawn.inventory.innerContainer.FirstOrDefault(v => v.def.defName == item.def.defName);
+                    Log.Message($"----inventory item: {inventoryItem} we still need: {desiredShoulderedCount - shoulderedCount}");
                     if (inventoryItem == null)
                     {
                         /* did we lose some along the way? */
@@ -320,33 +325,39 @@ public class JobDriver_UnloadYourHauledInventory : JobDriver
                     }
 
                     pawn.inventory.innerContainer.TryTransferToContainer(inventoryItem, pawn.carryTracker.innerContainer,
-                        desiredShoulderedCount - shoulderedCount, out shoulderedItem, true);
+                        desiredShoulderedCount - shoulderedCount, out var attemptedShoulderedItem, true);
 
-                    shoulderedItem = pawn.carryTracker.CarriedThing;
-                    if (shoulderedItem == null)
+                    /*may have attempted to merge same def but of different stuff*/
+                    if (attemptedShoulderedItem == null)
                     {
-                        Log.Message("----SOMETHING IS WRONG.  TRANSFERED ITEM TO SHOULDER BUT NO ITEM THERE?! " + pawn + " " + item + " " + desiredShoulderedCount);
+                        break;
                     }
-                    shoulderedCount = shoulderedItem.stackCount;
+
+                    shoulderedCount = pawn.carryTracker.CarriedThing.stackCount;
+                }
+                var shoulderedItem = pawn.carryTracker.CarriedThing;
+                if (shoulderedItem==null)
+                {
+                    Log.Message("----Tried to shoulder an item but could not find it inventory.");
+                    pawn.GetHaulInventoryComp().RemoveFirst();
+                    //job.targetQueueA.RemoveAt(0);
+                    //job.countQueue.RemoveAt(0);
+                    pawn.jobs.curDriver.JumpToToil(findNextDestinationForFirstItem);
+                    return;
+                }
+
+                if (!pawn.health.capacities.CapableOf(PawnCapacityDefOf.Manipulation))
+                {
+                    Log.Message($"----Pawn {pawn} incapable of hauling, dropping {item}");
+
+                    pawn.carryTracker.TryDropCarriedThing(pawn.Position, ThingPlaceMode.Near, out var __);
+                    pawn.jobs.curDriver.JumpToToil(findNextDestinationForFirstItem);
+                    return;
                 }
 
                 /* At this point we shouldered the item. */
                 job.SetTarget(TargetIndex.A, shoulderedItem);
                 job.count = shoulderedCount;
-
-                job.countQueue[0] -= shoulderedCount;
-                if (job.countQueue[0] < 0)
-                {
-                    Log.Message("----SOMETHING WENT TERRIBLY WRONG!  CHECK YOUR LOGIC, BLOCK HEAD!");
-                }
-
-                if (job.countQueue[0] == 0)
-                {
-                    Log.Message("----no more deliveries for this item.");
-                    /*if no more scheduled deliveries for this item/count might as well remove it now. */
-                    job.targetQueueA.RemoveAt(0);
-                    job.countQueue.RemoveAt(0);
-                }
 
 
                 pawn.Reserve(shoulderedItem, job, 1, shoulderedCount);

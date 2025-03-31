@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Net.NetworkInformation;
 using System.Reflection;
 using System.Security.Principal;
 using System.Text;
@@ -265,9 +266,14 @@ namespace PickUpAndHaul
                 if (project == null)
                     continue;
 
+                
                 var numberOfThisThingNeeded = project.ThingCountNeeded(thing.def);
+                
+
                 if (numberOfThisThingNeeded > 0)
                 {
+
+                    Log.Message($"CONSTURCTABLE FOUND: {project} {(project as Thing).def.defName} for: {thing} {numberOfThisThingNeeded}");
                     return new CriticalThingHaulDestination(i)
                     {
                         CountNeeded = numberOfThisThingNeeded
@@ -282,7 +288,7 @@ namespace PickUpAndHaul
     }
 
 
-    public class CriticalThingHaulDestination : IHaulDestination
+    public class CriticalThingHaulDestination : ThingWithComps, IHaulDestination, IThingHolder
     {
         private Thing _thing;
 
@@ -295,10 +301,6 @@ namespace PickUpAndHaul
         public int? CountNeeded = null;
         public int? ProgressBarDelay = null;
 
-        public static explicit operator Thing(CriticalThingHaulDestination haulableDestination)
-        {
-            return haulableDestination.Thing;
-        }
 
         public IntVec3 Position => Thing.Position;
 
@@ -335,10 +337,27 @@ namespace PickUpAndHaul
             };
 
         }
-
+        
         public void Notify_SettingsChanged()
         {
 
+        }
+
+        public void GetChildHolders(List<IThingHolder> outChildren)
+        {
+            if (Thing is IThingHolder thingHolder)
+            {
+                thingHolder.GetChildHolders(outChildren);
+            }
+        }
+
+        public ThingOwner GetDirectlyHeldThings()
+        {
+            if (Thing is IThingHolder thingHolder)
+            {
+                return thingHolder.GetDirectlyHeldThings();
+            }
+            return null;
         }
     }
 
@@ -364,6 +383,9 @@ namespace PickUpAndHaul
         public override int GetCountCanAccept(Thing item, bool canMergeWithExistingStacks = true)
         {
             var project = Thing as IConstructible;
+
+            if (project is Blueprint_Install)
+                return 1;
 
             var numberOfThisThingNeeded = project.ThingCountNeeded(item.def);
             return numberOfThisThingNeeded;

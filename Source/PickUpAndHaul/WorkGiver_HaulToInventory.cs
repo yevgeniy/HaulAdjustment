@@ -103,7 +103,7 @@ public class WorkGiver_HaulToInventory : WorkGiver_HaulGeneral
     public override Job JobOnThing(Pawn pawn, Thing item, bool forced = false)
     {
         Log.Message("-------------");
-        Log.Message("WORK GIVER START for: " + pawn);
+        Log.Message($"WORK GIVER START for: {pawn} forced: {forced} hauler: {string.Join(", ", pawn.GetHaulInventoryComp().CarriedThings)} ");
 
 
         if (pawn.GetComp<CompHauledToInventory>() is null)
@@ -112,6 +112,12 @@ public class WorkGiver_HaulToInventory : WorkGiver_HaulGeneral
             return HaulAIUtility.HaulToStorageJob(pawn, item);
         }
 
+        if (pawn.GetHaulInventoryComp().CarriedThings.Count > 0 && !forced)
+        {
+            Log.Message("--still has registered carried thigns.  Try to unload those.");
+            var unloadJob = JobMaker.MakeJob(PickUpAndHaulJobDefOf.UnloadYourHauledInventory, pawn);
+            return unloadJob;
+        }
 
         var map = pawn.Map;
 

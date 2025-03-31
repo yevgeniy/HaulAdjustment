@@ -60,7 +60,6 @@ public class JobDriver_HaulToInventory : JobDriver
         Toil pickUpItemToil = PickUpItemToil(Aqueue, Countqueue);
         Toil checkIfReadyToHaulToil = CheckIfReadyToUnload(makeUnloadJobToil);
         Toil findNextItemCloseByToil = FindNextItemCloseByToil(
-            firstItem.Thing.Position,
             firstDestination.HasThing ? firstDestination.Thing.Position : firstDestination.Cell
         );
         Toil findBestDestinationForItemToil = FindBestDestinationForItemToil();
@@ -221,10 +220,20 @@ public class JobDriver_HaulToInventory : JobDriver
 
     private static Utils.ThingPositionComparer Comparer { get; } = new();
     public HashSet<Thing> Seen=new();
-
+    private IntVec3 LastPickedupThingsPosition
+    {
+        get
+        {
+            return this.job.GetTarget(TargetIndex.C).Cell;
+        }
+        set
+        {
+            this.job.SetTarget(TargetIndex.C, value);
+        }
+    }
     private const float SEARCH_FOR_OTHERS_RANGE_FRACTION = 0.5f;
 
-    private Toil FindNextItemCloseByToil(IntVec3 firstThingPosition, IntVec3 firstDestinationPosition)
+    private Toil FindNextItemCloseByToil(IntVec3 firstDestinationPosition)
     {
         var haulUrgentlyDesignation = PickUpAndHaulDesignationDefOf.haulUrgently;
         var map = pawn.Map;
@@ -252,18 +261,18 @@ public class JobDriver_HaulToInventory : JobDriver
                 
                 
 
-                var distanceToHaul = (firstDestinationPosition - firstThingPosition).LengthHorizontal * SEARCH_FOR_OTHERS_RANGE_FRACTION;
+                var distanceToHaul = (firstDestinationPosition - this.LastPickedupThingsPosition).LengthHorizontal * SEARCH_FOR_OTHERS_RANGE_FRACTION;
                 var distanceToSearchMore = Math.Max(12f, distanceToHaul);
 
                 var maxDistanceSquared = distanceToSearchMore * distanceToSearchMore;
 
                 var items = new List<Thing>();
-                var center = firstThingPosition;
+                var center = this.LastPickedupThingsPosition;
                 var peMode = PathEndMode.ClosestTouch;
                 var traverseParams = TraverseParms.For(pawn);
 
-                
 
+                Seen.Clear();
                 while (Utils.FindClosestThing(
                     center, 
                     pawn.Map, 
@@ -342,6 +351,7 @@ public class JobDriver_HaulToInventory : JobDriver
             {
                 var actor = pawn;
                 var item = actor.CurJob.GetTarget(TargetIndex.A).Thing;
+                this.LastPickedupThingsPosition = item.Position;
                 Toils_Haul.ErrorCheckForCarry(actor, item);
 
                 var countToPickUp = Mathf.Min(job.count, MassUtility.CountToPickUpUntilOverEncumbered(actor, item));
@@ -351,21 +361,11 @@ public class JobDriver_HaulToInventory : JobDriver
                 Log.Message($"----{actor} is hauling to inventory {item}:{countToPickUp}");
 
                 var splitThing = item.SplitOff(countToPickUp);
-                actor.inventory.GetDirectlyHeldThings().TryAdd(splitThing, splitThing.def.stackLimit > 1);
+                actor.inventory.GetDirectlyHeldThings().TryAdd(splitThing, false);
 
                 /*Adjust record of things held just for hauling*/
-                var i = AQ.FindIndex(v => v.Thing.def.defName == splitThing.def.defName);
-                if (i == -1)
-                {
-                    AQ.Add(item);
-                    CQ.Add(countToPickUp);
-                }
-                else
-                {
-                    CQ[i] += countToPickUp;
-                }
-                Log.Message("A queue: " + string.Join(", ", AQ.Select(v => v.Thing.def.defName)));
-                Log.Message("Count queue: " + string.Join(", ", CQ.Select(v => v)));
+                pawn.GetHaulInventoryComp().Add(splitThing);
+
             }
         };
         return t;

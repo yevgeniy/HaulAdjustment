@@ -1,6 +1,7 @@
 ﻿using System.Linq;
 using System.Reflection;
 using HarmonyLib;
+using RimWorld;
 using Verse;
 
 namespace PickUpAndHaul;
@@ -145,8 +146,15 @@ static class HarmonyPatches
 
     private static bool TryGetInnerInteractableThingOwner(ref ThingOwner __result, Thing thing)
     {
+        if (thing is CriticalThingHaulDestination)
+        {
+            thing= (thing as CriticalThingHaulDestination).Thing;
+        }
+
         if (thing is Blueprint)
         {
+
+            Log.Message($"BLUEPRINT: {thing}");
             /* only for blueprints because I think frames have a 'thing owner' */
             __result = new HaulThingOwner(thing, __result);
             return false;
@@ -161,6 +169,7 @@ static class HarmonyPatches
             if (comp != null)
             {
                 /*is a gun*/
+                Log.Message($"GUN: {thing}");
                 __result = new GunThingOwner(thing, __result);
                 return false;
             }
@@ -169,6 +178,7 @@ static class HarmonyPatches
         if (ModCompatibilityCheck.VehicleIsActive && VehiclePawnType.IsAssignableFrom(thing.GetType()))
         {
             //Log.Message("GET ThingOwner FOR: " + thing);
+            Log.Message($"VEHICLE: {thing}");
             __result = new VehicleThingOwner(thing, __result);
             return false;
         }
@@ -221,51 +231,51 @@ static class HarmonyPatches
 
     private static bool Drop_Prefix(Pawn pawn, Thing thing)
     {
-        var takenToInventory = pawn.GetComp<CompHauledToInventory>();
-        if (takenToInventory == null)
-        {
-            return true;
-        }
+        //var takenToInventory = pawn.GetComp<CompHauledToInventory>();
+        //if (takenToInventory == null)
+        //{
+        //    return true;
+        //}
 
-        var carriedThing = takenToInventory.GetHashSet();
-        return !carriedThing.Contains(thing);
+        //return !takenToInventory.Contains(thing);
+        return true;
     }
 
     private static void Pawn_InventoryTracker_PostFix(Pawn_InventoryTracker __instance, Thing item)
     {
-        var takenToInventory = __instance.pawn?.GetComp<CompHauledToInventory>();
-        if (takenToInventory == null)
-        {
-            return;
-        }
+        //var takenToInventory = __instance.pawn?.GetComp<CompHauledToInventory>();
+        //if (takenToInventory == null)
+        //{
+        //    return;
+        //}
 
-        var carriedThing = takenToInventory.GetHashSet();
-        if (carriedThing?.Count > 0)
-        {
-            carriedThing.Remove(item);
-        }
+        //var carriedThing = takenToInventory.GetHashSet();
+        //if (carriedThing?.Count > 0)
+        //{
+        //    carriedThing.Remove(item);
+        //}
     }
 
     private static void JobDriver_HaulToCell_PostFix(JobDriver_HaulToCell __instance)
     {
-        var pawn = __instance.pawn;
-        var takenToInventory = pawn?.GetComp<CompHauledToInventory>();
-        if (takenToInventory == null)
-        {
-            return;
-        }
+        //var pawn = __instance.pawn;
+        //var takenToInventory = pawn?.GetComp<CompHauledToInventory>();
+        //if (takenToInventory == null)
+        //{
+        //    return;
+        //}
 
-        var carriedThing = takenToInventory.GetHashSet();
+        //var carriedThing = takenToInventory.CarriedThings;
 
-        if (__instance.job.haulMode == HaulMode.ToCellStorage
-            && pawn.Faction == Faction.OfPlayerSilentFail
-            && Settings.IsAllowedRace(pawn.RaceProps)
-            && (Settings.AllowCorpses || pawn.carryTracker.CarriedThing is not Corpse)
-            && carriedThing != null
-            && carriedThing.Count != 0) //deliberate hauling job. Should unload.
-        {
-            PawnUnloadChecker.CheckIfPawnShouldUnloadInventory(pawn, true);
-        }
+        //if (__instance.job.haulMode == HaulMode.ToCellStorage
+        //    && pawn.Faction == Faction.OfPlayerSilentFail
+        //    && Settings.IsAllowedRace(pawn.RaceProps)
+        //    && (Settings.AllowCorpses || pawn.carryTracker.CarriedThing is not Corpse)
+        //    && carriedThing != null
+        //    && carriedThing.Count != 0) //deliberate hauling job. Should unload.
+        //{
+        //    PawnUnloadChecker.CheckIfPawnShouldUnloadInventory(pawn, true);
+        //}
     }
 
     public static void IdleJoy_Postfix(Pawn pawn) => PawnUnloadChecker.CheckIfPawnShouldUnloadInventory(pawn, true);
@@ -342,7 +352,7 @@ static class HarmonyPatches
     }
 
     private static Color GetColorForHauled(Pawn pawn, Thing thing)
-        => pawn.GetComp<CompHauledToInventory>()?.GetHashSet().Contains(thing) ?? false
+        => pawn.GetComp<CompHauledToInventory>()?.Contains(thing) ?? false
         ? Color.Lerp(Color.grey, Color.red, 0.5f)
         : Color.white;
 }
@@ -359,6 +369,10 @@ public class record_things_to_build
     {
         if (__result is IConstructible)
         {
+            if (__result is Blueprint_Install)
+            {
+                return;
+            }
             Log.Message("RECORDING CONSTRUCTABLE");
             CritDestinationsMap.Constructables.Add(__result);
         }

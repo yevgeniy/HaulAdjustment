@@ -4,7 +4,7 @@ namespace PickUpAndHaul;
 public class HoldMultipleThings_Support
 {
     public static bool OverAllowedGearCapacity(Pawn pawn) => MassUtility.GearMass(pawn) / MassUtility.Capacity(pawn) >= Settings.MaximumOccupiedCapacityToConsiderHauling;
-    public static int CapacityAt(Thing thing, IntVec3 storeCell, Map map)
+    public static int CapacityAt(Pawn pawn, Thing thing, IntVec3 storeCell, Map map)
     {
         if (HoldMultipleThings_Support.CapacityAt(thing, storeCell, map, out var capacity))
         {
@@ -14,11 +14,16 @@ public class HoldMultipleThings_Support
 
         capacity = thing.def.stackLimit;
 
-        var preExistingThing = map.thingGrid.ThingAt(storeCell, thing.def);
-        if (preExistingThing != null)
-        {
-            capacity = thing.def.stackLimit - preExistingThing.stackCount;
-        }
+		var j=HaulAIUtility.HaulToCellStorageJob(pawn, thing, storeCell, true);
+		capacity = j.count;
+
+        //var preExistingThing = map.thingGrid.ThingAt(storeCell, thing.def);
+        //Log.Message($"----a {preExistingThing} {capacity}");
+        //if (preExistingThing != null)
+        //{
+        //    capacity = thing.def.stackLimit - preExistingThing.stackCount;
+        //    Log.Message($"----g {capacity} {thing.def.stackLimit} {preExistingThing.stackCount}");
+        //}
 
         return capacity;
     }
@@ -31,14 +36,14 @@ public class HoldMultipleThings_Support
 		   .AllComps.FirstOrDefault(x => x is IHoldMultipleThings.IHoldMultipleThings)
 		   is IHoldMultipleThings.IHoldMultipleThings compOfHolding)
 		{
-			return compOfHolding.CapacityAt(thing, storeCell, map, out capacity);
+            return compOfHolding.CapacityAt(thing, storeCell, map, out capacity);
 		}
 
-		foreach (var t in storeCell.GetThingList(map))
+        foreach (var t in storeCell.GetThingList(map))
 		{
-			if (t is IHoldMultipleThings.IHoldMultipleThings holderOfMultipleThings)
+            if (t is IHoldMultipleThings.IHoldMultipleThings holderOfMultipleThings)
 			{
-				return holderOfMultipleThings.CapacityAt(thing, storeCell, map, out capacity);
+                return holderOfMultipleThings.CapacityAt(thing, storeCell, map, out capacity);
 			}
 		}
 
