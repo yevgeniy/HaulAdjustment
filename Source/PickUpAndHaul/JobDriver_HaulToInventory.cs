@@ -11,17 +11,29 @@ public class JobDriver_HaulToInventory : JobDriver
     public override bool TryMakePreToilReservations(bool errorOnFailed)
     {
         var res = new List<bool>();
-        res.Add(pawn.Reserve(TargetA, job, 1, job.count));
 
+        if (!this.pawn.CanReserve(TargetA))
+        {
+            Log.Message($"cant reserve item: {pawn} {TargetA}");
+            return false;
+        }
+        if (!this.pawn.CanReserve(TargetB))
+        {
+            Log.Message($"cant reserve location: {pawn} {TargetB}");
+            return false;
+        }
+
+
+        pawn.Reserve(TargetA, job);
+        
         if (TargetB.Thing != null && VehiclePawnProxy.VehiclePawnType.IsAssignableFrom(TargetB.Thing.GetType()))
         {
             CritDestinationsMap.AddVehicleHaul(job, TargetB.Thing as Pawn, TargetA.Thing, job.count);
-
-            res.Add(pawn.Reserve(TargetB, job, 99));
+            //this.pawn.Reserve(TargetB, this.job, 99);
         }
         else
         {
-            res.Add(pawn.Reserve(TargetB, job));
+            this.pawn.Reserve(TargetB, this.job);
         }
 
         var rr = res.All(v => v);
@@ -62,7 +74,6 @@ public class JobDriver_HaulToInventory : JobDriver
         Toil findNextItemCloseByToil = FindNextItemCloseByToil(
             firstDestination.HasThing ? firstDestination.Thing.Position : firstDestination.Cell
         );
-        Toil findBestDestinationForItemToil = FindBestDestinationForItemToil();
         Toil reserveAndGoPickupFoundItemToil = ReserveAndGoPickupFoundItemToil(goToPickupTargetToil);
 
 
@@ -70,58 +81,14 @@ public class JobDriver_HaulToInventory : JobDriver
         yield return goToPickupTargetToil;
         yield return pickUpItemToil;
         yield return checkIfReadyToHaulToil;
+        yield return Toils_General.Wait(5);
         yield return findNextItemCloseByToil;
-
         yield return Toils_Jump.JumpIf(makeUnloadJobToil, () => job.GetTarget(TargetIndex.A) == null);
-
-        yield return findBestDestinationForItemToil;
-
-        yield return Toils_Jump.JumpIf(findNextItemCloseByToil, () => job.GetTarget(TargetIndex.B) == null);
 
         yield return reserveAndGoPickupFoundItemToil;
 
         yield return makeUnloadJobToil;
         yield return waitToil;
-
-
-
-
-        //      var nextTarget = Toils_JobTransforms.ExtractNextTargetFromQueue(TargetIndex.A); //also does count
-        //yield return nextTarget;
-
-        //yield return CheckForOverencumberedForCombatExtended();
-
-        //var gotoThing = new Toil
-        //{
-        //	initAction = () => pawn.pather.StartPath(TargetThingA, PathEndMode.ClosestTouch),
-        //	defaultCompleteMode = ToilCompleteMode.PatherArrival
-        //};
-        //gotoThing.FailOnDespawnedNullOrForbidden(TargetIndex.A);
-        //yield return gotoThing;
-
-        //var makeUnloadJob = new Toil //Queue next job
-        //{
-        //    initAction = () =>
-        //    {
-        //        var actor = pawn;
-        //        var curJob = actor.jobs.curJob;
-        //        var storeCell = curJob.targetB;
-
-        //        var unloadJob = JobMaker.MakeJob(PickUpAndHaulJobDefOf.UnloadYourHauledInventory, storeCell);
-        //        if (unloadJob.TryMakePreToilReservations(actor, false))
-        //        {
-        //            actor.jobs.jobQueue.EnqueueFirst(unloadJob, JobTag.Misc);
-        //            EndJobWith(JobCondition.Succeeded);
-        //            //This will technically release the cell reservations in the queue, but what can you do
-        //        }
-        //    }
-        //};
-
-        //yield return takeThing;
-        //yield return Toils_Jump.JumpIf(nextTarget, () => !job.targetQueueA.NullOrEmpty());
-
-        //yield return makeUnloadJob;
-        //yield return waitToil;
     }
 
 
@@ -138,17 +105,17 @@ public class JobDriver_HaulToInventory : JobDriver
 
                 Log.Message("----MAKING NEXT reservations: " + item + " " + destination);
 
-                pawn.Reserve(item, job, 1, job.count);
+                pawn.Reserve(item, job);
                 if (destination.Thing != null && VehiclePawnProxy.VehiclePawnType.IsAssignableFrom(destination.Thing.GetType()))
                 {
                     CritDestinationsMap.AddVehicleHaul(job, destination.Thing as Pawn, item.Thing, job.count);
-                    pawn.Reserve(destination, job, 99);
+                    //this.pawn.Reserve(destination, this.job, 99);
                 }
                 else
                 {
-                    pawn.Reserve(destination, job);
-                }
+                    this.pawn.Reserve(destination, this.job);
 
+                }
                 pawn.jobs.curDriver.JumpToToil(goToPickupTargetToil);
             },
 
@@ -158,40 +125,28 @@ public class JobDriver_HaulToInventory : JobDriver
         return t;
     }
 
-    private Toil FindBestDestinationForItemToil()
+    private LocalTargetInfo FindDestination(LocalTargetInfo ThingA, out int count)
     {
-        var t = new Toil
+        var item = ThingA.Thing;
+
+        Log.Message("----FIND best destination for item: " + item);
+
+        var currentPriority = StoreUtility.CurrentStoragePriorityOf(item);
+
+        if (Utils.FindDestinationForThing(
+            item, pawn, pawn.Map, currentPriority, false,
+            out var destinationTarget, out count, out var interjectJob, out var _))
         {
-            initAction = () =>
-            {
-                var item = job.GetTarget(TargetIndex.A).Thing;
 
-                Log.Message("----FIND best destination for item: " + item);
+            Log.Message("----found good destination: " + destinationTarget + " " + count);
 
-                var currentPriority = StoreUtility.CurrentStoragePriorityOf(item);
+            return destinationTarget;
 
-                if (Utils.FindDestinationForThing(
-                    item, pawn, pawn.Map, currentPriority, false,
-                    out var destinationTarget, out var count, out var interjectJob, out var _))
-                {
+        }
 
-                    Log.Message("----found good destination: " + destinationTarget + " " + count);
-
-                    job.SetTarget(TargetIndex.B, destinationTarget);
-                    job.count = Math.Min(item.stackCount, count);
-                    return;
-
-                }
-
-                Log.Message("----no good destination for item: " + item);
-                job.SetTarget(TargetIndex.B, null);
-                job.count = -1;
-            },
-
-        };
-        t.defaultCompleteMode = ToilCompleteMode.Instant;
-
-        return t;
+        Log.Message("----no good destination for item: " + item);
+        count = -1;
+        return null;
     }
 
     private Toil MakeUnloadJobToil(List<LocalTargetInfo> Aqueue, List<int> Countqueue)
@@ -203,10 +158,7 @@ public class JobDriver_HaulToInventory : JobDriver
                 Log.Message("----QUEUE up unload job: " + pawn);
                 var actor = pawn;
 
-
                 var unloadJob = JobMaker.MakeJob(PickUpAndHaulJobDefOf.UnloadYourHauledInventory, null);
-                unloadJob.targetQueueA = Aqueue;
-                unloadJob.countQueue = Countqueue;
 
                 actor.jobs.jobQueue.EnqueueFirst(unloadJob, JobTag.Misc);
                 EndJobWith(JobCondition.Succeeded);
@@ -219,7 +171,7 @@ public class JobDriver_HaulToInventory : JobDriver
     }
 
     private static Utils.ThingPositionComparer Comparer { get; } = new();
-    public HashSet<Thing> Seen=new();
+    public HashSet<Thing> Seen = new();
     private IntVec3 LastPickedupThingsPosition
     {
         get
@@ -257,9 +209,6 @@ public class JobDriver_HaulToInventory : JobDriver
             initAction = () =>
             {
                 Log.Message("----LOCATE NEXT THING");
-                
-                
-                
 
                 var distanceToHaul = (firstDestinationPosition - this.LastPickedupThingsPosition).LengthHorizontal * SEARCH_FOR_OTHERS_RANGE_FRACTION;
                 var distanceToSearchMore = Math.Max(12f, distanceToHaul);
@@ -273,20 +222,32 @@ public class JobDriver_HaulToInventory : JobDriver
 
 
                 Seen.Clear();
+                var c = 0;
+
                 while (Utils.FindClosestThing(
-                    center, 
-                    pawn.Map, 
+                    center,
+                    pawn.Map,
                     pawn,
                     Seen,
                     (Thing i) => validator(i, pawn, itemIsUrgent(i), designationManager),
                     out Thing closestThing)
                 )
                 {
+                    c++;
+                    if (c > 100)
+                    {
+                        Log.Message("TERM SEARCH REACHED.");
+                    }
                     Log.Message("----look at: " + closestThing);
                     Seen.Add(closestThing);
 
-                    if (closestThing.def.thingCategories.Any(v=>v.defName == "StoneChunks") 
-                        && designationManager.DesignationOn(closestThing)?.def!=DesignationDefOf.Haul)
+                    if (!closestThing.TryGetComp<CompHauledToInventory>(out var _))
+                    {
+                        continue;
+                    }
+
+                    if (closestThing.def.thingCategories.Any(v => v.defName == "StoneChunks")
+                        && designationManager.DesignationOn(closestThing)?.def != DesignationDefOf.Haul)
                     {
                         continue;
                     }
@@ -305,7 +266,17 @@ public class JobDriver_HaulToInventory : JobDriver
                     }
 
                     Log.Message("----found next closes thing: " + pawn + " " + closestThing);
+
+                    var dest = FindDestination(closestThing, out var count);
+                    if (dest == null)
+                    {
+                        continue;
+                    }
+
                     job.SetTarget(TargetIndex.A, closestThing);
+                    job.SetTarget(TargetIndex.B, dest);
+                    job.count = Math.Min(closestThing.stackCount, count);
+
                     return;
 
                 }
@@ -361,11 +332,14 @@ public class JobDriver_HaulToInventory : JobDriver
                 Log.Message($"----{actor} is hauling to inventory {item}:{countToPickUp}");
 
                 var splitThing = item.SplitOff(countToPickUp);
-                actor.inventory.GetDirectlyHeldThings().TryAdd(splitThing, false);
-
-                /*Adjust record of things held just for hauling*/
-                pawn.GetHaulInventoryComp().Add(splitThing);
-
+                if (actor.inventory.GetDirectlyHeldThings().TryAdd(splitThing, false))
+                {
+                    splitThing.GetHaulInventoryComp().Hauling = true;
+                }
+                else
+                {
+                    Log.Message($"COULDNOT ADD ITEM TO INVENTORY {this.pawn} {splitThing}");
+                }
             }
         };
         return t;

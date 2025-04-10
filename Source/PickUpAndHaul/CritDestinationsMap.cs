@@ -18,8 +18,8 @@ namespace PickUpAndHaul
     {
 
         //IConstructible c
-        public static HashSet<Thing> Constructables = new HashSet<Thing>();
-        public static HashSet<ThingWithComps> Guns = new HashSet<ThingWithComps>();
+        //public HashSet<Thing> constructables = null; // new HashSet<Thing>();
+        //public HashSet<ThingWithComps> Guns = null; // new HashSet<ThingWithComps>();
 
         public static StatDef ReloadSpeed = null;
 
@@ -118,10 +118,10 @@ namespace PickUpAndHaul
 
             if (Find.TickManager.TicksGame % 2000 == 0)
             {
-                Constructables.RemoveWhere(v => v == null || !v.Spawned);
+                //constructables.RemoveWhere(v => v == null || !v.Spawned);
 
 
-                Guns.RemoveWhere(v => v == null || !v.Spawned);
+                //Guns.RemoveWhere(v => v == null || !v.Spawned);
             }
         }
 
@@ -129,19 +129,17 @@ namespace PickUpAndHaul
         {
             base.ExposeData();
 
-            Scribe_Collections.Look(ref Constructables, "nimm-crit-constructables", LookMode.Reference);
-            Scribe_Collections.Look(ref Guns, "nimm-crit-guns", LookMode.Reference);
+            //Scribe_Collections.Look(ref Constructables, "nimm-crit-constructables", LookMode.Reference);
+            //Scribe_Collections.Look(ref Guns, "nimm-crit-guns", LookMode.Reference);
             
+            //if (Constructables == null)
+            //    Constructables = new HashSet<Thing>();
 
+            //if (Guns == null)
+            //    Guns = new HashSet<ThingWithComps>();
 
-            if (Constructables == null)
-                Constructables = new HashSet<Thing>();
-
-            if (Guns == null)
-                Guns = new HashSet<ThingWithComps>();
-
-            if (ToVehicleHauling == null)
-                ToVehicleHauling = new Dictionary<Job, Dictionary<Pawn, Dictionary<Def, int>>>();
+            //if (ToVehicleHauling == null)
+            //    ToVehicleHauling = new Dictionary<Job, Dictionary<Pawn, Dictionary<Def, int>>>();
         }
 
         public static IHaulDestination GetMatchingVehiclePackagingForItem(Pawn pawn, Thing thing)
@@ -157,10 +155,12 @@ namespace PickUpAndHaul
 
             foreach (var i in listers)
             {
+                Log.Message($"looking at vehicle: {i}");
                 var vehicle = new VehiclePawnProxy(i as Pawn);
 
                 if (pawn != null && pawn.Faction != vehicle.Faction)
                 {
+                    Log.Message($"not of same faction: {i} {vehicle.Faction}");
                     continue;
                 }
 
@@ -190,52 +190,80 @@ namespace PickUpAndHaul
 
         public static IHaulDestination GetMatchingGunForAmmo(Pawn pawn, Thing thing)
         {
+            /*TODO initially we need to find all guns in storage*/
+            return null;
+
             if (pawn == null)
                 return null;
 
 
-            Log.Message("GUNS: " + Guns.Count);
-            foreach (var i in Guns.ToList())
+            //Log.Message("GUNS: " + Guns.Count);
+            //foreach (var i in Guns.ToList())
+            //{
+            //    if (i == null)
+            //        continue;
+
+            //    if (!i.Spawned)
+            //    {
+            //        continue;
+            //    }
+
+            //    var gun = new GunProxy(i);
+
+            //    var ammoDef = gun.CurrentAmmo;
+            //    if (ammoDef == null)
+            //    {
+            //        return null;
+            //    }
+
+            //    Log.Message("AMMO: " + string.Join(", ", ammoDef.thingCategories.Select(v => v.defName)));
+
+            //    if (ammoDef.defName != thing.def.defName)
+            //    {
+            //        continue;
+            //    }
+
+            //    int howMuchNeededForFullReload = gun.TotalMagCount - gun.CurrentMagCount;
+
+            //    if (howMuchNeededForFullReload == 0)
+            //    {
+            //        Guns.Remove(i);
+            //        continue;
+            //    }
+
+            //    return new GunThingHaulDestination(i)
+            //    {
+            //        CountNeeded = howMuchNeededForFullReload,
+            //        ProgressBarDelay = pawn != null ? Mathf.CeilToInt(gun.ReloadTime.SecondsToTicks() / pawn.GetStatValue(ReloadSpeed)) : null
+            //    };
+            //}
+
+            //return null;
+        }
+
+        private static IEnumerable<Thing> GetConstructables(Pawn pawn)
+        {
+            Map map = pawn.Map;
+            if (map == null)
             {
-                if (i == null)
-                    continue;
-
-                if (!i.Spawned)
-                {
-                    continue;
-                }
-
-                var gun = new GunProxy(i);
-
-                var ammoDef = gun.CurrentAmmo;
-                if (ammoDef == null)
-                {
-                    return null;
-                }
-
-                Log.Message("AMMO: " + string.Join(", ", ammoDef.thingCategories.Select(v => v.defName)));
-
-                if (ammoDef.defName != thing.def.defName)
-                {
-                    continue;
-                }
-
-                int howMuchNeededForFullReload = gun.TotalMagCount - gun.CurrentMagCount;
-
-                if (howMuchNeededForFullReload == 0)
-                {
-                    Guns.Remove(i);
-                    continue;
-                }
-
-                return new GunThingHaulDestination(i)
-                {
-                    CountNeeded = howMuchNeededForFullReload,
-                    ProgressBarDelay = pawn != null ? Mathf.CeilToInt(gun.ReloadTime.SecondsToTicks() / pawn.GetStatValue(ReloadSpeed)) : null
-                };
+                Log.Message("COULD NOT FIND MAP");
             }
 
-            return null;
+            // Access the ListerThings for the map
+            foreach(var i in  map.listerThings.ThingsInGroup(ThingRequestGroup.Blueprint))
+            {
+                if (i is IConstructible)
+                {
+                    if (i is Blueprint_Install)
+                    {
+                        continue;
+                    }
+                    yield return i;
+                }
+            }
+            
+
+
         }
 
 
@@ -244,8 +272,10 @@ namespace PickUpAndHaul
             if (pawn == null)
                 return null;
 
-            Log.Message("CONSTRUCTS: " + Constructables.Count);
-            foreach (var i in Constructables)
+            var constructables = GetConstructables(pawn);
+
+            Log.Message("CONSTRUCTS: " + constructables.Count());
+            foreach (var i in constructables)
             {
                 if (i == null)
                     continue;
@@ -300,6 +330,20 @@ namespace PickUpAndHaul
         public Thing Thing => _thing;
         public int? CountNeeded = null;
         public int? ProgressBarDelay = null;
+
+        public override string GetInspectString()
+        {
+            return Thing.GetInspectString();
+        }
+        public override string GetInspectStringLowPriority()
+        {
+            return Thing.GetInspectStringLowPriority();
+        }
+        public new string GetUniqueLoadID()
+        {
+            return Thing.GetUniqueLoadID();
+        }
+
 
 
         public IntVec3 Position => Thing.Position;

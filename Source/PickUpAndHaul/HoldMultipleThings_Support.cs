@@ -8,14 +8,21 @@ public class HoldMultipleThings_Support
     {
         if (HoldMultipleThings_Support.CapacityAt(thing, storeCell, map, out var capacity))
         {
+            
             Log.Message($"Found external capacity of {capacity}");
             return capacity;
         }
+     
+        //capacity = thing.def.stackLimit;
 
-        capacity = thing.def.stackLimit;
+        capacity = storeCell.GetItemStackSpaceLeftFor(pawn.Map, thing.def);
 
-		var j=HaulAIUtility.HaulToCellStorageJob(pawn, thing, storeCell, true);
-		capacity = j.count;
+        //var j=HaulAIUtility.HaulToCellStorageJob(pawn, thing, storeCell, true);
+        //if (j == null)
+        //    return 0;
+     
+        //capacity = j.count;
+     
 
         //var preExistingThing = map.thingGrid.ThingAt(storeCell, thing.def);
         //Log.Message($"----a {preExistingThing} {capacity}");

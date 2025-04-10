@@ -35,9 +35,13 @@ namespace PickUpAndHaul
             return listers as IEnumerable<object>;
         }
 
-        public static CompHauledToInventory GetHaulInventoryComp(this Pawn pawn)
+        public static CompHauledToInventory GetHaulInventoryComp(this Thing thing)
         {
-            pawn.TryGetComp<CompHauledToInventory>(out var comp);
+            if (!thing.TryGetComp<CompHauledToInventory>(out var comp))
+            {
+                Log.Message($"NO COMP ON {thing}");
+                return null;
+            }
             return comp;
         }
 
@@ -82,6 +86,8 @@ namespace PickUpAndHaul
                     destinationTarget = new LocalTargetInfo(targetCell);
                     count = HoldMultipleThings_Support.CapacityAt(pawn, thing, targetCell, map);
                     Log.Message("----count: " + count);
+                    if (count == 0)
+                        return false;
                     return true;
 
                     /* TODO: i want to know why we hate hooper jobs so much */
@@ -122,7 +128,11 @@ namespace PickUpAndHaul
             return pawn.inventory.innerContainer.Any(v => v == thing);
         }
 
-        public static bool OkThingToHaul(Thing t, Pawn pawn) => t.Spawned && pawn.CanReserve(t) && !t.IsForbidden(pawn);
+        public static bool OkThingToHaul(Thing t, Pawn pawn)
+        {
+            
+            return t.Spawned && pawn.CanReserve(t) && !t.IsForbidden(pawn);
+        }
 
         public static Thing ExtractThingFromHaulDestination(IHaulDestination t, out Thing thing, out ThingOwner nonSlotGroupThingOwner, out int? progBarDel)
         {

@@ -41,84 +41,24 @@ public class WorkGiver_HaulToInventory : WorkGiver_HaulGeneral
 
 
     public override bool HasJobOnThing(Pawn pawn, Thing thing, bool forced = false)
-        => Utils.OkThingToHaul(thing, pawn)
-        && IsNotCorpseOrAllowed(thing)
-        && HaulAIUtility.PawnCanAutomaticallyHaulFast(pawn, thing, forced)
-        && StoreUtility.TryFindBestBetterStorageFor(thing, pawn, pawn.Map, StoreUtility.CurrentStoragePriorityOf(thing), pawn.Faction, out _, out _, false);
+    {
+        var a = Utils.OkThingToHaul(thing, pawn);
 
-    
+        var b = IsNotCorpseOrAllowed(thing);
 
-    //public List<Thing> GetThingsCloseBy(Pawn pawn, Thing firstThing, Map map, StoreTarget firstStoreTarget)
-    //{
-    //    var haulables = new List<Thing>(map.listerHaulables.ThingsPotentiallyNeedingHauling());
-    //    Comparer.rootCell = firstThing.Position;
-    //    haulables.Sort(Comparer);
+        var c = HaulAIUtility.PawnCanAutomaticallyHaulFast(pawn, thing, forced);
 
-    //    var distanceToHaul = (firstStoreTarget.Position - firstThing.Position).LengthHorizontal * SEARCH_FOR_OTHERS_RANGE_FRACTION;
-    //    var distanceToSearchMore = Math.Max(12f, distanceToHaul);
+        var d= StoreUtility.TryFindBestBetterStorageFor(thing, pawn, pawn.Map, StoreUtility.CurrentStoragePriorityOf(thing), pawn.Faction, out _, out _, false);
 
-    //    if (haulables == null || !haulables.Any())
-    //    {
-    //        return null;
-    //    }
-
-    //    var maxDistanceSquared = distanceToSearchMore * distanceToSearchMore;
+        return a && b && c && d;
+    }
 
 
-    //    var items = new List<Thing>();
-    //    var center = firstThing.Position;
-    //    var peMode = PathEndMode.ClosestTouch;
-    //    var traverseParams = TraverseParms.For(pawn);
-    //    while (FindClosestThing(haulables, center, out var i) is { } closestThing)
-    //    {
-    //        haulables.RemoveAt(i);
-    //        if (!closestThing.Spawned)
-    //        {
-    //            continue;
-    //        }
-
-    //        if ((center - closestThing.Position).LengthHorizontalSquared > maxDistanceSquared)
-    //        {
-    //            break;
-    //        }
-
-    //        if (!map.reachability.CanReach(center, closestThing, peMode, traverseParams))
-    //        {
-    //            continue;
-    //        }
-
-    //        if (validator == null || validator(closestThing))
-    //        {
-    //            return closestThing;
-    //        }
-    //    }
-
-    //    return null;
-
-    //}
-
-    //pick up stuff until you can't anymore,
-    //while you're up and about, pick up something and haul it
-    //before you go out, empty your pockets
     public override Job JobOnThing(Pawn pawn, Thing item, bool forced = false)
     {
         Log.Message("-------------");
-        Log.Message($"WORK GIVER START for: {pawn} forced: {forced} hauler: {string.Join(", ", pawn.GetHaulInventoryComp().CarriedThings)} ");
 
-
-        if (pawn.GetComp<CompHauledToInventory>() is null)
-        {
-            Log.Message("--pawn missing storage component.  Haul noramlly");
-            return HaulAIUtility.HaulToStorageJob(pawn, item);
-        }
-
-        if (pawn.GetHaulInventoryComp().CarriedThings.Count > 0 && !forced)
-        {
-            Log.Message("--still has registered carried thigns.  Try to unload those.");
-            var unloadJob = JobMaker.MakeJob(PickUpAndHaulJobDefOf.UnloadYourHauledInventory, pawn);
-            return unloadJob;
-        }
-
+        
         var map = pawn.Map;
 
         var currentPriority = StoreUtility.CurrentStoragePriorityOf(item);
@@ -134,6 +74,17 @@ public class WorkGiver_HaulToInventory : WorkGiver_HaulGeneral
             //}
 
 
+            if (!item.TryGetComp<CompHauledToInventory>(out var _))
+            {
+                return HaulAIUtility.HaulToStorageJob(pawn, item);
+            }
+
+            if (MassUtility.WillBeOverEncumberedAfterPickingUp(pawn, item, item.stackCount))
+            {
+                return HaulAIUtility.HaulToStorageJob(pawn, item);
+            }
+
+              
             Log.Message("--haul to inventory job: " + item + " " + destinationTarget);
             var j= JobMaker.MakeJob(PickUpAndHaulJobDefOf.HaulToInventory, item, destinationTarget);
             j.count = Math.Min( count, item.stackCount);
@@ -143,7 +94,7 @@ public class WorkGiver_HaulToInventory : WorkGiver_HaulGeneral
         }
 
         /* Did not find anything to haul.  Just in case, let noral process take over */
-        Log.Message("--count not fined good destination: " + item);
+        Log.Message("--could not fined good destination: " + item);
         return HaulAIUtility.HaulToStorageJob(pawn, item);
 
     }

@@ -15,8 +15,6 @@ public class JobDriver_UnloadYourHauledInventory : JobDriver
 
     private static FieldInfo countToTransferFieldInfo = AccessTools.Field(typeof(TransferableOneWay), "countToTransfer");
 
-
-
     public override bool TryMakePreToilReservations(bool errorOnFailed)
     {
         return true;
@@ -106,10 +104,12 @@ public class JobDriver_UnloadYourHauledInventory : JobDriver
         yield return releaseReservation;
         yield return Toils_General.Do(() =>
         {
-            if (false == pawn.GetHaulInventoryComp().TryDecrementCountBy(this.job.count))
+            /*If for some reason pawn is still carrying anything, just drop it*/
+            if (this.pawn.carryTracker.CarriedThing!=null)
             {
-                Log.Message("----SOMETHING WENT TERRIBLY WRONG!  CHECK YOUR LOGIC, BLOCK HEAD!");
+                this.pawn.carryTracker.TryDropCarriedThing(pawn.Position, ThingPlaceMode.Near, out var __);
             }
+            
         });
         yield return Toils_Jump.Jump(beginWait);
 
@@ -123,60 +123,38 @@ public class JobDriver_UnloadYourHauledInventory : JobDriver
         var t = Toils_General.Do(() =>
         {
             Log.Message("----FIND NEXT DESTINATION");
-            var haulingComp = pawn.GetHaulInventoryComp();
 
-            if (false==haulingComp.TryGetFirstCount(out var haulingQuantity))
+            /*TODO*/
+
+
+            var hauledInventoryItem = pawn.inventory.innerContainer.FirstOrDefault(v => v.GetHaulInventoryComp().Hauling);
+
+            if (hauledInventoryItem==null)
             {
                 /*No more items.  Job is good?*/
-
                 Log.Message("----No more items hauled");
                 pawn.jobs.curDriver.JumpToToil(successToil);
                 return;
             }
 
-            haulingComp.TryGetFirstDefName(out var itemDef);
-
-
-            Log.Message("----item: " + itemDef + " current count: " + haulingQuantity);
-
-            var inventoryItem = pawn.inventory.innerContainer.FirstOrDefault(v => v.def == itemDef);
-
-            /*Along the way we may have droped? that item.  Do we still have it in our inventory?*/
-            if (inventoryItem == null || haulingQuantity<=0)
-            {
-                Log.Message("----item not found in inventory for some reason.  Next item.");
-                haulingComp.RemoveFirst();
-                //job.targetQueueA.RemoveAt(0);
-                //job.countQueue.RemoveAt(0);
-
-                pawn.jobs.curDriver.JumpToToil(beginWait);
-                return;
-            }
-
             var currentPriority = StoragePriority.Unstored;
 
-            if (Utils.FindDestinationForThing(inventoryItem, pawn, pawn.Map,
+            if (Utils.FindDestinationForThing(hauledInventoryItem, pawn, pawn.Map,
                 currentPriority, false, out var destinationTarget, out var desiredCountAtDestination, out var _,
                 out int? progressBarDelay)
             )
             {
-                /*we may have shelf that can accept 200 rice but rice can only be shouldered at 99 stackLimit*/
-                desiredCountAtDestination = Math.Min(desiredCountAtDestination, itemDef.stackLimit);
+                
+                Log.Message("----desired count at destination: " + desiredCountAtDestination);
 
-                Log.Message("----found place that will accept count: " + destinationTarget + " " + desiredCountAtDestination);
-                var desiredShoulderQuantity = Mathf.Min(desiredCountAtDestination, haulingQuantity);
-
-                Log.Message("----will deliver to that place amount: " + desiredShoulderQuantity);
-
-                job.SetTarget(TargetIndex.A, inventoryItem);
+                job.SetTarget(TargetIndex.A, hauledInventoryItem);
                 job.SetTarget(TargetIndex.B, destinationTarget);
-                job.count = desiredShoulderQuantity;
+                job.count = Math.Min(desiredCountAtDestination, hauledInventoryItem.def.stackLimit);
 
                 /*reserve */
                 if (destinationTarget.HasThing && VehiclePawnProxy.VehiclePawnType.IsAssignableFrom(destinationTarget.Thing.GetType()))
                 {
-                    CritDestinationsMap.AddVehicleHaul(job, destinationTarget.Thing as Pawn, inventoryItem, job.count);
-                    pawn.Reserve(TargetB, job, 99);
+                    CritDestinationsMap.AddVehicleHaul(job, destinationTarget.Thing as Pawn, hauledInventoryItem, job.count);
                 }
                 else
                 {
@@ -188,26 +166,11 @@ public class JobDriver_UnloadYourHauledInventory : JobDriver
             }
             else
             {
-                Log.Message("----could not find destination for item: " + itemDef + " drop all of it");
-
-                /*there could be lots of stacks of this item in our inventory.  LOL */
-                do
-                {
-                    pawn.inventory.innerContainer.TryDrop(inventoryItem, ThingPlaceMode.Near, inventoryItem.stackCount, out _);
-
-                    inventoryItem = pawn.inventory.innerContainer.FirstOrDefault(v => v.def.defName == itemDef.defName);
-                } while (inventoryItem != null);
-
-                haulingComp.RemoveFirst();
-
-                //job.targetQueueA.RemoveAt(0);
-                //job.countQueue.RemoveAt(0);
-
+                Log.Message("----could not find destination for item: " + hauledInventoryItem + " drop it");
+                pawn.inventory.innerContainer.TryDrop(hauledInventoryItem, ThingPlaceMode.Near, hauledInventoryItem.stackCount, out _);
+                
                 pawn.jobs.curDriver.JumpToToil(beginWait);
                 return;
-
-
-                //EndJobWith(JobCondition.Succeeded);
             }
 
         });
@@ -290,7 +253,7 @@ public class JobDriver_UnloadYourHauledInventory : JobDriver
         };
     }
 
-    private Toil PullItemFromInventoryToil(Toil findNextDestinationForFirstItem)
+    private Toil PullItemFromInventoryToil(Toil startingToil)
     {
         Toil t = new()
         {
@@ -298,36 +261,48 @@ public class JobDriver_UnloadYourHauledInventory : JobDriver
             {
 
                 var item = job.GetTarget(TargetIndex.A).Thing;
-                var desiredShoulderedCount = job.count;
+                var desiredShoulderCount = job.count;
 
-                Log.Message("----PULL ITEM FROM INVENTORY: " + pawn + " " + item + " desired: " + desiredShoulderedCount);
+                Log.Message("----PULL ITEM FROM INVENTORY: " + pawn + " " + item + " desired: " + desiredShoulderCount);
+
+                /* First shoulder the item for which the destination was derived to give us a concrete
+                 * def/stuff definition of the item going to that destination */
+                pawn.inventory.innerContainer.TryTransferToContainer(item, pawn.carryTracker.innerContainer,
+                        Math.Min(desiredShoulderCount,item.stackCount), out var shoulderedItem, true);
+
+                if (shoulderedItem == null)
+                {
+                    Log.Message($"COULD NOT SHOULDER THE INITIAL ITEM FOR SOME REAONS {this.pawn} {item}");
+                }
 
                 
+                var shoulderedCount = pawn.carryTracker.CarriedThing.stackCount;
 
-                var shoulderedCount = 0;
+                /* if shoulder count is under desired then keep looking at inventory to pull upto desired count*/
                 var c = 0;
-                while (shoulderedCount < desiredShoulderedCount)
+                while (shoulderedCount < desiredShoulderCount)
                 {
                     c++;
-                    if (c>100)
+                    if (c>1000)
                     {
-                        Log.Message("TERM LOOP!");
+                        Log.Message("TERMINATE LOOP!");
                         break;
                     }
-                    var inventoryItem = pawn.inventory.innerContainer.FirstOrDefault(v => v.def.defName == item.def.defName);
-                    Log.Message($"----inventory item: {inventoryItem} we still need: {desiredShoulderedCount - shoulderedCount}");
-                    if (inventoryItem == null)
-                    {
-                        /* did we lose some along the way? */
-                        Log.Message($"----no more items in the inventory to satisfy the count for {item}.  Resulting count {shoulderedCount}");
+                    var stillNeed = desiredShoulderCount - shoulderedCount;
+                    var anotherInventoryItem = pawn.inventory.innerContainer.FirstOrDefault(v =>v.CanStackWith(item) && v.GetHaulInventoryComp().Hauling);
 
+                    /*no more same item in inventory*/
+                    if (anotherInventoryItem==null)
+                    {
                         break;
                     }
+                    
+                    Log.Message($"----inventory item: {anotherInventoryItem} we still need: {stillNeed}");
+                    
+                    pawn.inventory.innerContainer.TryTransferToContainer(anotherInventoryItem, pawn.carryTracker.innerContainer,
+                        desiredShoulderCount - shoulderedCount, out var attemptedShoulderedItem, true);
 
-                    pawn.inventory.innerContainer.TryTransferToContainer(inventoryItem, pawn.carryTracker.innerContainer,
-                        desiredShoulderedCount - shoulderedCount, out var attemptedShoulderedItem, true);
-
-                    /*may have attempted to merge same def but of different stuff*/
+                    /*could not pull out new item out of inventory for some reason*/
                     if (attemptedShoulderedItem == null)
                     {
                         break;
@@ -335,14 +310,13 @@ public class JobDriver_UnloadYourHauledInventory : JobDriver
 
                     shoulderedCount = pawn.carryTracker.CarriedThing.stackCount;
                 }
-                var shoulderedItem = pawn.carryTracker.CarriedThing;
+
+                shoulderedItem = pawn.carryTracker.CarriedThing;
+                shoulderedItem.GetHaulInventoryComp().Hauling = true;
+
                 if (shoulderedItem==null)
                 {
-                    Log.Message("----Tried to shoulder an item but could not find it inventory.");
-                    pawn.GetHaulInventoryComp().RemoveFirst();
-                    //job.targetQueueA.RemoveAt(0);
-                    //job.countQueue.RemoveAt(0);
-                    pawn.jobs.curDriver.JumpToToil(findNextDestinationForFirstItem);
+                    Log.Message($"NO ITEM ON SHOULDER! {this.pawn} {shoulderedItem}");
                     return;
                 }
 
@@ -351,17 +325,15 @@ public class JobDriver_UnloadYourHauledInventory : JobDriver
                     Log.Message($"----Pawn {pawn} incapable of hauling, dropping {item}");
 
                     pawn.carryTracker.TryDropCarriedThing(pawn.Position, ThingPlaceMode.Near, out var __);
-                    pawn.jobs.curDriver.JumpToToil(findNextDestinationForFirstItem);
+                    pawn.jobs.curDriver.JumpToToil(startingToil);
                     return;
                 }
 
                 /* At this point we shouldered the item. */
                 job.SetTarget(TargetIndex.A, shoulderedItem);
-                job.count = shoulderedCount;
-
+                job.count = shoulderedItem.stackCount;
 
                 pawn.Reserve(shoulderedItem, job, 1, shoulderedCount);
-
 
                 /*TODO: don't know why this is called */
                 //shoulderedItem.SetForbidden(false, false);

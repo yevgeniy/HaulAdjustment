@@ -3,24 +3,26 @@ public class PawnUnloadChecker
 {
 	public static void CheckIfPawnShouldUnloadInventory(Pawn pawn, bool forced = false)
 	{
-		var job = JobMaker.MakeJob(PickUpAndHaulJobDefOf.UnloadYourHauledInventory, pawn);
-		var haulComp = pawn?.GetHaulInventoryComp();
+		/*TODO*/
+		//var job = JobMaker.MakeJob(PickUpAndHaulJobDefOf.UnloadYourHauledInventory, pawn);
+		//var haulComp = pawn?.GetHaulInventoryComp();
 
-		if (haulComp == null)
-		{
-			return;
-		}
+		//if (haulComp == null)
+		//{
+		//	return;
+		//}
 
-		var carriedThing = haulComp.CarriedThings;
 
-		if (pawn.Faction != Faction.OfPlayerSilentFail || !Settings.IsAllowedRace(pawn.RaceProps)
-			|| carriedThing == null || carriedThing.Count == 0
-			|| pawn.inventory.innerContainer is not { } inventoryContainer || inventoryContainer.Count == 0)
-		{
-			return;
-		}
+		//var carriedThing = haulComp.CarriedThings;
 
-        pawn.jobs.jobQueue.EnqueueFirst(job, JobTag.Misc);
+		//if (pawn.Faction != Faction.OfPlayerSilentFail || !Settings.IsAllowedRace(pawn.RaceProps)
+		//	|| carriedThing == null || carriedThing.Count == 0
+		//	|| pawn.inventory.innerContainer is not { } inventoryContainer || inventoryContainer.Count == 0)
+		//{
+		//	return;
+		//}
+
+  //      pawn.jobs.jobQueue.EnqueueFirst(job, JobTag.Misc);
 	}
 }
 

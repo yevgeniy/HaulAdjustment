@@ -3,6 +3,7 @@ using System.Reflection;
 using HarmonyLib;
 using RimWorld;
 using Verse;
+using static Unity.Burst.Intrinsics.X86.Avx;
 
 namespace PickUpAndHaul;
 [StaticConstructorOnStartup]
@@ -48,8 +49,6 @@ static class HarmonyPatches
         harmony.Patch(original: AccessTools.Method(typeof(JobGiver_Idle), nameof(JobGiver_Idle.TryGiveJob)),
             postfix: new HarmonyMethod(typeof(HarmonyPatches), nameof(IdleJoy_Postfix)));
 
-        harmony.Patch(original: AccessTools.Method(typeof(ITab_Pawn_Gear), nameof(ITab_Pawn_Gear.DrawThingRow)),
-            transpiler: new HarmonyMethod(typeof(HarmonyPatches), nameof(GearTabHighlightTranspiler)));
 
         harmony.Patch(original: AccessTools.Method(typeof(WorkGiver_Haul), nameof(WorkGiver_Haul.ShouldSkip)),
             prefix: new HarmonyMethod(typeof(HarmonyPatches), nameof(SkipCorpses_Prefix)));
@@ -62,6 +61,11 @@ static class HarmonyPatches
 
         harmony.Patch(AccessTools.Method(typeof(ThingOwnerUtility), nameof(ThingOwnerUtility.TryGetInnerInteractableThingOwner)),
             prefix: new(typeof(HarmonyPatches), nameof(TryGetInnerInteractableThingOwner)));
+
+        harmony.Patch(AccessTools.Method(typeof(ThingOwner), nameof(ThingOwner.NotifyRemoved)),
+            postfix: new(typeof(HarmonyPatches), nameof(NotifyRemovedItem)));
+
+        
 
 
 
@@ -86,6 +90,22 @@ static class HarmonyPatches
         Verse.Log.Message("PickUpAndHaul v1.1.2¼ welcomes you to RimWorld with pointless logspam.");
     }
 
+    public static void NotifyRemovedItem(ref ThingOwner __instance, Thing item)
+    {
+        
+        if (__instance.owner is Pawn_InventoryTracker)
+        {
+            if (!item.TryGetComp<CompHauledToInventory>(out var comp))
+            {
+                Log.Message($"NO COMP ON {item}");
+                return;
+            }
+            Log.Message($"notify removed {item}");
+            comp.Hauling = false;
+
+        }
+
+    }
 
     public static void JobOnThing_override_vehicle_pack_job(ref Job __result, Pawn pawn, Thing t, bool forced)
     {
@@ -121,22 +141,22 @@ static class HarmonyPatches
                 var gun = new GunProxy(thingWithComps);
                 var comp = gun.CompAmmoUser;
 
-                if (comp != null)
-                {
-                    if (!CritDestinationsMap.Guns.Contains(thingWithComps))
-                    {
-                        var slogGroup = thing.Map.haulDestinationManager.SlotGroupParentAt(thing.Position);
+                //if (comp != null)
+                //{
+                //    if (!CritDestinationsMap.Guns.Contains(thingWithComps))
+                //    {
+                //        var slogGroup = thing.Map.haulDestinationManager.SlotGroupParentAt(thing.Position);
 
 
-                        if (slogGroup != null && slogGroup.GetStoreSettings().Priority != StoragePriority.Unstored)
-                        {
+                //        if (slogGroup != null && slogGroup.GetStoreSettings().Priority != StoragePriority.Unstored)
+                //        {
                             
-                            CritDestinationsMap.Guns.Add(thingWithComps);
-                        }
+                //            CritDestinationsMap.Guns.Add(thingWithComps);
+                //        }
 
-                    }
+                //    }
 
-                }
+                //}
 
             }
         }
@@ -321,40 +341,6 @@ static class HarmonyPatches
     private static Func<Pawn, Thing, bool, Job> HaulToInventoryJob => _haulToInventoryJob ??= new(((WorkGiver_Scanner)DefDatabase<WorkGiverDef>.GetNamed("HaulToInventory").Worker).JobOnThing);
     private static Func<Pawn, Thing, bool, Job> _haulToInventoryJob;
 
-    //ITab_Pawn_Gear
-    //private void DrawThingRow(ref float y, float width, Thing thing, bool inventory = false)
-    public static IEnumerable<CodeInstruction> GearTabHighlightTranspiler(IEnumerable<CodeInstruction> instructions, MethodBase method)
-    {
-        var ColorWhite = AccessTools.PropertyGetter(typeof(Color), nameof(Color.white));
-
-        var done = false;
-        foreach (var i in instructions)
-        {
-            //// Color color = flag ? Color.grey : Color.white;
-            if (!done && i.Calls(ColorWhite))
-            {
-                yield return FishTranspiler.This;
-                yield return FishTranspiler.CallPropertyGetter(typeof(ITab_Pawn_Gear), nameof(ITab_Pawn_Gear.SelPawnForGear));
-                yield return FishTranspiler.Argument(method, "thing");
-                yield return FishTranspiler.Call(GetColorForHauled);
-                done = true;
-            }
-            else
-            {
-                yield return i;
-            }
-        }
-
-        if (!done)
-        {
-            Verse.Log.Warning("Pick Up And Haul failed to patch ITab_Pawn_Gear.DrawThingRow. This is only used for coloring and totally harmless, but you might wanna know anyway");
-        }
-    }
-
-    private static Color GetColorForHauled(Pawn pawn, Thing thing)
-        => pawn.GetComp<CompHauledToInventory>()?.Contains(thing) ?? false
-        ? Color.Lerp(Color.grey, Color.red, 0.5f)
-        : Color.white;
 }
 
 
@@ -373,8 +359,8 @@ public class record_things_to_build
             {
                 return;
             }
-            Log.Message("RECORDING CONSTRUCTABLE");
-            CritDestinationsMap.Constructables.Add(__result);
+            //Log.Message("RECORDING CONSTRUCTABLE");
+            //CritDestinationsMap.constructables.Add(__result);
         }
 
     }
