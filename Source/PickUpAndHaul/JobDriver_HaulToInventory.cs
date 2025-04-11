@@ -74,56 +74,18 @@ public class JobDriver_HaulToInventory : JobDriver
         Toil findNextItemCloseByToil = FindNextItemCloseByToil(
             firstDestination.HasThing ? firstDestination.Thing.Position : firstDestination.Cell
         );
-        Toil reserveAndGoPickupFoundItemToil = ReserveAndGoPickupFoundItemToil(goToPickupTargetToil);
-
-
 
         yield return goToPickupTargetToil;
         yield return pickUpItemToil;
         yield return checkIfReadyToHaulToil;
         yield return Toils_General.Wait(5);
         yield return findNextItemCloseByToil;
-        yield return Toils_Jump.JumpIf(makeUnloadJobToil, () => job.GetTarget(TargetIndex.A) == null);
-
-        yield return reserveAndGoPickupFoundItemToil;
+        yield return Toils_Jump.JumpIf(goToPickupTargetToil, () => job.GetTarget(TargetIndex.A) != null);
 
         yield return makeUnloadJobToil;
         yield return waitToil;
     }
 
-
-
-    private Toil ReserveAndGoPickupFoundItemToil(Toil goToPickupTargetToil)
-    {
-        var t = new Toil
-        {
-            initAction = () =>
-            {
-
-                var item = job.GetTarget(TargetIndex.A);
-                var destination = job.GetTarget(TargetIndex.B);
-
-                Log.Message("----MAKING NEXT reservations: " + item + " " + destination);
-
-                pawn.Reserve(item, job);
-                if (destination.Thing != null && VehiclePawnProxy.VehiclePawnType.IsAssignableFrom(destination.Thing.GetType()))
-                {
-                    CritDestinationsMap.AddVehicleHaul(job, destination.Thing as Pawn, item.Thing, job.count);
-                    //this.pawn.Reserve(destination, this.job, 99);
-                }
-                else
-                {
-                    this.pawn.Reserve(destination, this.job);
-
-                }
-                pawn.jobs.curDriver.JumpToToil(goToPickupTargetToil);
-            },
-
-        };
-        t.defaultCompleteMode = ToilCompleteMode.Instant;
-
-        return t;
-    }
 
     private LocalTargetInfo FindDestination(LocalTargetInfo ThingA, out int count)
     {
@@ -273,12 +235,26 @@ public class JobDriver_HaulToInventory : JobDriver
                         continue;
                     }
 
+                    Log.Message($"----found good item and destination: {closestThing} {dest}.  making reservations.");
+
+                    pawn.Reserve(closestThing, job);
+                    if (dest.Thing != null && VehiclePawnProxy.VehiclePawnType.IsAssignableFrom(dest.Thing.GetType()))
+                    {
+                        CritDestinationsMap.AddVehicleHaul(job, dest.Thing as Pawn, closestThing, job.count);
+                        //this.pawn.Reserve(destination, this.job, 99);
+                    }
+                    else
+                    {
+                        this.pawn.Reserve(dest, this.job);
+
+                    }
+                    
+
                     job.SetTarget(TargetIndex.A, closestThing);
                     job.SetTarget(TargetIndex.B, dest);
                     job.count = Math.Min(closestThing.stackCount, count);
 
                     return;
-
                 }
 
                 Log.Message("----no close thing near by to haul");

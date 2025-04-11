@@ -65,7 +65,10 @@ static class HarmonyPatches
         harmony.Patch(AccessTools.Method(typeof(ThingOwner), nameof(ThingOwner.NotifyRemoved)),
             postfix: new(typeof(HarmonyPatches), nameof(NotifyRemovedItem)));
 
-        
+        harmony.Patch(AccessTools.Method(typeof(Pawn_JobTracker), nameof(Pawn_JobTracker.StartJob)),
+            prefix: new(typeof(HarmonyPatches), nameof(StartJob)));
+
+
 
 
 
@@ -90,9 +93,19 @@ static class HarmonyPatches
         Verse.Log.Message("PickUpAndHaul v1.1.2¼ welcomes you to RimWorld with pointless logspam.");
     }
 
+    public static bool StartJob(ref Pawn_JobTracker __instance,  Job newJob, ref JobCondition lastJobEndCondition, ThinkNode jobGiver, bool resumeCurJobAfterwards, bool cancelBusyStances, ThinkTreeDef thinkTree, JobTag? tag, bool fromQueue, bool canReturnCurJobToPool, bool? keepCarryingThingOverride, bool continueSleeping, bool addToJobsThisTick, bool preToilReservationsCanFail)
+    {
+        if (__instance.curJob!=null && lastJobEndCondition == JobCondition.None)
+        {
+            lastJobEndCondition= JobCondition.InterruptForced;
+        }
+
+        return true;
+    }
+
     public static void NotifyRemovedItem(ref ThingOwner __instance, Thing item)
     {
-        
+
         if (__instance.owner is Pawn_InventoryTracker)
         {
             if (!item.TryGetComp<CompHauledToInventory>(out var comp))
@@ -109,20 +122,35 @@ static class HarmonyPatches
 
     public static void JobOnThing_override_vehicle_pack_job(ref Job __result, Pawn pawn, Thing t, bool forced)
     {
-        if (__result != null)
-        {
-            WorkGiver_HaulToInventory haulMoreWork = DefDatabase<WorkGiverDef>.AllDefsListForReading.First(wg => wg.Worker is WorkGiver_HaulToInventory).Worker as WorkGiver_HaulToInventory;
+        //if (__result != null)
+        //{
             
-            var thingBeingHauled = __result.targetA.Thing;
-            Log.Message("CHECKING IF BETTER JOB EXISTS for ? " + thingBeingHauled);
-            var job = haulMoreWork.JobOnThing(pawn, thingBeingHauled, forced);
+        //    WorkGiver_HaulToInventory haulMoreWork = DefDatabase<WorkGiverDef>.AllDefsListForReading.First(wg => wg.Worker is WorkGiver_HaulToInventory).Worker as WorkGiver_HaulToInventory;
+            
+        //    var thingBeingHauled = __result.targetA.Thing;
+        //    if (__result.targetA == null || __result.targetA.Thing == null)
+        //        return;
 
-            Log.Message("RET JOB: " + job);
-            if (job != null && job.def == PickUpAndHaulJobDefOf.HaulToInventory)
-            {
-                __result = job;
-            }
-        }
+        //    if (!__result.targetA.Thing.TryGetComp<CompHauledToInventory>(out var c))
+        //    {
+        //        return;
+        //    }
+
+        //    if (!haulMoreWork.HasJobOnThing(pawn, __result.targetA.Thing))
+        //        return;
+            
+        //    Log.Message("CHECKING IF BETTER JOB EXISTS for ? " + thingBeingHauled);
+        //    var job = haulMoreWork.JobOnThing(pawn, thingBeingHauled, forced);
+            
+        //    Log.Message("RET JOB: " + job);
+            
+        //    if (job != null && job.def == PickUpAndHaulJobDefOf.HaulToInventory)
+        //    {
+                
+        //        __result = job;
+        //    }
+            
+        //}
 
     }
 
@@ -150,7 +178,7 @@ static class HarmonyPatches
 
                 //        if (slogGroup != null && slogGroup.GetStoreSettings().Priority != StoragePriority.Unstored)
                 //        {
-                            
+
                 //            CritDestinationsMap.Guns.Add(thingWithComps);
                 //        }
 
@@ -160,7 +188,7 @@ static class HarmonyPatches
 
             }
         }
-       
+
 
     }
 
@@ -168,7 +196,7 @@ static class HarmonyPatches
     {
         if (thing is CriticalThingHaulDestination)
         {
-            thing= (thing as CriticalThingHaulDestination).Thing;
+            thing = (thing as CriticalThingHaulDestination).Thing;
         }
 
         if (thing is Blueprint)
@@ -212,38 +240,44 @@ static class HarmonyPatches
     {
         haulDestination = null;
 
-        if (ModCompatibilityCheck.CombatExtendedIsActive)
+        if (carrier!=null && t.TryGetComp<CompHauledToInventory>(out var c) && !MassUtility.WillBeOverEncumberedAfterPickingUp(carrier, t, t.stackCount))
         {
-            haulDestination = CritDestinationsMap.GetMatchingGunForAmmo(carrier, t);
+
+            if (ModCompatibilityCheck.CombatExtendedIsActive)
+            {
+                haulDestination = CritDestinationsMap.GetMatchingGunForAmmo(carrier, t);
+                if (haulDestination != null)
+                {
+                    __result = true;
+                    return false;
+                }
+            }
+
+
+            if (ModCompatibilityCheck.VehicleIsActive)
+            {
+                haulDestination = CritDestinationsMap.GetMatchingVehiclePackagingForItem(carrier, t);
+                if (haulDestination != null)
+                {
+
+                    __result = true;
+                    return false;
+                }
+            }
+
+
+
+            haulDestination = CritDestinationsMap.GetMatchingConstructableForMaterial(carrier, t);
+
             if (haulDestination != null)
             {
+
                 __result = true;
                 return false;
             }
         }
 
-
-        if (ModCompatibilityCheck.VehicleIsActive)
-        {
-            haulDestination = CritDestinationsMap.GetMatchingVehiclePackagingForItem(carrier, t);
-            if (haulDestination != null)
-            {
-                
-                __result = true;
-                return false;
-            }
-        }
-
-
-
-        haulDestination = CritDestinationsMap.GetMatchingConstructableForMaterial(carrier, t);
-
-        if (haulDestination != null)
-        {
-            
-            __result = true;
-            return false;
-        }
+        
 
         return true;
     }

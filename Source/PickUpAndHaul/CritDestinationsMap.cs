@@ -325,6 +325,10 @@ namespace PickUpAndHaul
         public CriticalThingHaulDestination(Thing t)
         {
             _thing = t;
+            def = new ThingDef
+            {
+                defName="CriticalThingHaulDestination"
+            };
         }
 
         public Thing Thing => _thing;
@@ -341,7 +345,7 @@ namespace PickUpAndHaul
         }
         public new string GetUniqueLoadID()
         {
-            return Thing.GetUniqueLoadID();
+            return Thing.GetUniqueLoadID()+"_construct";
         }
 
 
@@ -421,6 +425,8 @@ namespace PickUpAndHaul
             }
         }
 
+
+
         public Thing Thing { get; set; }
         public ThingOwner Original { get; }
 
@@ -468,6 +474,10 @@ namespace PickUpAndHaul
         public GunThingHaulDestination(Thing t) : base(t)
         {
         }
+        public new string GetUniqueLoadID()
+        {
+            return Thing.GetUniqueLoadID()+"_gun";
+        }
 
         public override bool Accepts(Thing t)
         {
@@ -501,12 +511,7 @@ namespace PickUpAndHaul
             return r;
 
         }
-
-        public string GetUniqueLoadID()
-        {
-            throw new NotImplementedException();
-        }
-
+        
         private int? _countCanAccept = null;
         public int SpaceRemainingFor(ThingDef stuff)
         {
@@ -566,6 +571,11 @@ namespace PickUpAndHaul
     {
         public VehicleThingHaulDestination(Thing t) : base(t)
         {
+        }
+
+        public new string GetUniqueLoadID()
+        {
+            return Thing.GetUniqueLoadID()+"_vehicle";
         }
 
         public override bool Accepts(Thing t)
