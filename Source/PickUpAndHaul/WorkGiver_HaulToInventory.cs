@@ -63,6 +63,13 @@ public class WorkGiver_HaulToInventory : WorkGiver_HaulGeneral
 
         var currentPriority = StoreUtility.CurrentStoragePriorityOf(item);
 
+        /*If pawn is within 10 blocks to a hauling vehicle check to see if we should potentially use that*/
+        if (!forced && CritDestinationsMap.TryGetHaulingVehicle(out Pawn vehicle))
+        {
+            return CritDestinationsMap.StartVehicleHaulJob(vehicle, pawn);
+            
+        }
+
         if (Utils.FindDestinationForThing(
             item, pawn, map, currentPriority, forced,
             out var destinationTarget, out var count, out var interjectJob, out var _))

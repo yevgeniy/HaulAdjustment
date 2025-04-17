@@ -130,7 +130,6 @@ namespace PickUpAndHaul
 
         public static bool OkThingToHaul(Thing t, Pawn pawn)
         {
-            
             return t.Spawned && pawn.CanReserve(t) && !t.IsForbidden(pawn);
         }
 
@@ -176,6 +175,47 @@ namespace PickUpAndHaul
 
         }
 
+        public static bool TryFindValidToZone(out SlotGroup to)
+        {
+            to = Find.Maps.SelectMany(v => v.haulDestinationManager.AllGroupsListForReading).FirstOrDefault(v => v.GetName().Split(' ')[0].ToLowerInvariant() == "to");
+            return to != null;
+        }
+        public static bool TryFindValidFromZones(out List<SlotGroup> froms)
+        {
+            froms = Find.Maps.SelectMany(v => v.haulDestinationManager.AllGroupsListForReading).Where(v => v.GetName().Split(' ')[0].ToLowerInvariant() == "from")
+                .Where(v => v.HeldThings.Count() > 0).ToList();
+
+            return froms.Count != 0;
+        }
+        public static bool TryFindValidFromZone(out SlotGroup from)
+        {
+            from = null;
+            if (!TryFindValidFromZones(out var zones))
+            {
+                return false;
+            }
+
+            from = zones.First();
+
+
+            return true;
+        }
+        public static bool TryFindFittingCell(Pawn vehicle, SlotGroup zone, out IntVec3 cell)
+        {
+            cell = default(IntVec3);
+
+            var v = new VehiclePawnProxy(vehicle);
+            foreach(var c in zone.CellsList)
+            {
+                if (v.FitsOnCell(c) && vehicle.Map.reachability.CanReach(vehicle.Position,c, PathEndMode.OnCell,TraverseParms.For(vehicle)))
+                {
+                    cell = c;
+                    return true;
+                }
+            }
+
+            return false;
+        }
     }
 
 

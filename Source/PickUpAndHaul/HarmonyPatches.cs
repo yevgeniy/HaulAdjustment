@@ -69,7 +69,11 @@ static class HarmonyPatches
             prefix: new(typeof(HarmonyPatches), nameof(StartJob)));
 
 
-
+        var type = assmeblies.SelectMany(assembly => assembly.GetTypes())
+            .FirstOrDefault(v => v.Name == "VehiclePawn");
+        var method_GetGizmos_on_vehicle = type.GetMethod("GetGizmos", BindingFlags.Public | BindingFlags.Instance);
+        harmony.Patch(method_GetGizmos_on_vehicle,
+            postfix: new(typeof(HarmonyPatches), nameof(GetVehiclGizmos)));
 
 
         var methInfo = typeof(Pawn_CarryTracker).GetMethod(
@@ -91,6 +95,30 @@ static class HarmonyPatches
         harmony.PatchAll();
 
         Verse.Log.Message("PickUpAndHaul v1.1.2¼ welcomes you to RimWorld with pointless logspam.");
+    }
+    public static void GetVehiclGizmos(ref IEnumerable<Gizmo> __result, Pawn __instance)
+    {
+        var gizs = __result.ToList();
+
+        var comp = __instance.GetHaulInventoryComp();
+        if (comp!=null && __instance.Faction==Faction.OfPlayerSilentFail)
+        {
+            Command_Action toggleCaravaning = new Command_Action
+            {
+                defaultLabel = comp.VehicleShouldBeUsedToHaul  ? "Stop haul use" : "Start haul use",
+                icon = ContentFinder<Texture2D>.Get("ADJ_HAUL", true),
+                action = delegate ()
+                {
+                    comp.VehicleShouldBeUsedToHaul = !comp.VehicleShouldBeUsedToHaul;
+                    comp.VehicleIsBusy = false;
+                }
+            };
+            gizs.Add(toggleCaravaning);
+
+
+            __result = gizs;
+        }
+        
     }
 
     public static bool StartJob(ref Pawn_JobTracker __instance,  Job newJob, ref JobCondition lastJobEndCondition, ThinkNode jobGiver, bool resumeCurJobAfterwards, bool cancelBusyStances, ThinkTreeDef thinkTree, JobTag? tag, bool fromQueue, bool canReturnCurJobToPool, bool? keepCarryingThingOverride, bool continueSleeping, bool addToJobsThisTick, bool preToilReservationsCanFail)
@@ -122,35 +150,39 @@ static class HarmonyPatches
 
     public static void JobOnThing_override_vehicle_pack_job(ref Job __result, Pawn pawn, Thing t, bool forced)
     {
-        //if (__result != null)
-        //{
-            
-        //    WorkGiver_HaulToInventory haulMoreWork = DefDatabase<WorkGiverDef>.AllDefsListForReading.First(wg => wg.Worker is WorkGiver_HaulToInventory).Worker as WorkGiver_HaulToInventory;
-            
-        //    var thingBeingHauled = __result.targetA.Thing;
-        //    if (__result.targetA == null || __result.targetA.Thing == null)
-        //        return;
+        if (__result != null)
+        {
 
-        //    if (!__result.targetA.Thing.TryGetComp<CompHauledToInventory>(out var c))
-        //    {
-        //        return;
-        //    }
+            WorkGiver_HaulToInventory haulMoreWork = DefDatabase<WorkGiverDef>.AllDefsListForReading.First(wg => wg.Worker is WorkGiver_HaulToInventory).Worker as WorkGiver_HaulToInventory;
 
-        //    if (!haulMoreWork.HasJobOnThing(pawn, __result.targetA.Thing))
-        //        return;
-            
-        //    Log.Message("CHECKING IF BETTER JOB EXISTS for ? " + thingBeingHauled);
-        //    var job = haulMoreWork.JobOnThing(pawn, thingBeingHauled, forced);
-            
-        //    Log.Message("RET JOB: " + job);
-            
-        //    if (job != null && job.def == PickUpAndHaulJobDefOf.HaulToInventory)
-        //    {
-                
-        //        __result = job;
-        //    }
-            
-        //}
+            var thingBeingHauled = __result.targetA.Thing;
+            if (__result.targetA == null || __result.targetA.Thing == null)
+                return;
+
+            if (!__result.targetA.Thing.TryGetComp<CompHauledToInventory>(out var c))
+            {
+                return;
+            }
+            if (MassUtility.WillBeOverEncumberedAfterPickingUp(pawn, t, t.stackCount))
+            {
+                return;
+            }
+
+            if (!haulMoreWork.HasJobOnThing(pawn, __result.targetA.Thing))
+                return;
+
+            Log.Message("CHECKING IF BETTER JOB EXISTS for ? " + thingBeingHauled);
+            var job = haulMoreWork.JobOnThing(pawn, thingBeingHauled, forced);
+
+            Log.Message("RET JOB: " + job);
+
+            if (job != null && job.def == PickUpAndHaulJobDefOf.HaulToInventory)
+            {
+
+                __result = job;
+            }
+
+        }
 
     }
 

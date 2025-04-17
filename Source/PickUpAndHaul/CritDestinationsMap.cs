@@ -10,6 +10,7 @@ using UnityEngine;
 using UnityStandardAssets.ImageEffects;
 using Verse;
 using Verse.AI;
+using static HarmonyLib.Code;
 
 namespace PickUpAndHaul
 {
@@ -27,6 +28,8 @@ namespace PickUpAndHaul
         /*We need to keep track how many things are being hauled to
          * vehicle to make propper count of still needed thigns */
         public static Dictionary<Job, Dictionary<Pawn/*vehicle*/, Dictionary<Def, int>>> ToVehicleHauling = new ();
+
+        public static Dictionary<CompHauledToInventory, bool> UseVehicleToHaul= new ();
 
 
         static CritDestinationsMap()
@@ -116,13 +119,41 @@ namespace PickUpAndHaul
         {
             base.MapComponentTick();
 
-            if (Find.TickManager.TicksGame % 2000 == 0)
+            if (Find.TickManager.TicksGame % GenDate.TicksPerHour == 0)
             {
-                //constructables.RemoveWhere(v => v == null || !v.Spawned);
-
-
-                //Guns.RemoveWhere(v => v == null || !v.Spawned);
+                foreach (var (haulcomp,_) in UseVehicleToHaul)
+                {
+                    haulcomp.Vehicle.GetHaulInventoryComp().CustomTick();
+                }
             }
+
+            if (CurrentCustomJob!=null)
+            {
+                CurrentCustomJob.Tick();
+
+                if (CurrentCustomJob.done)
+                {
+                    CurrentCustomJob = null;
+                }
+            }
+        }
+
+        public static bool TryGetHaulingVehicle(out Pawn vehicle)
+        {
+            vehicle = null;
+            foreach(var (comp,v) in UseVehicleToHaul)
+            {
+                if (v)
+                {
+                    if (comp.HasPotentialWork())
+                    {
+                        vehicle = comp.Vehicle;
+                        return true;
+                    }
+                }
+            }
+
+            return false;
         }
 
         public override void ExposeData()
@@ -261,11 +292,7 @@ namespace PickUpAndHaul
                     yield return i;
                 }
             }
-            
-
-
         }
-
 
         public static IHaulDestination GetMatchingConstructableForMaterial(Pawn pawn, Thing thing)
         {
@@ -314,7 +341,15 @@ namespace PickUpAndHaul
             return null;
         }
 
-        
+        public static CustomJobDriver CurrentCustomJob;
+        public static Job StartVehicleHaulJob(Pawn vehicle, Pawn pawn)
+        {
+
+            CurrentCustomJob = new CustomJobDriver_VehicalHaul(pawn, vehicle);
+            CurrentCustomJob.TryActivate();
+
+            return JobMaker.MakeJob(JobDefOf.StandAndStare);
+        }
     }
 
 
