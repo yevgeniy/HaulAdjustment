@@ -15,7 +15,7 @@ using System.Reflection;
 [assembly: System.Reflection.AssemblyCompanyAttribute("PickUpAndHaul")]
 [assembly: System.Reflection.AssemblyConfigurationAttribute("Release")]
 [assembly: System.Reflection.AssemblyFileVersionAttribute("1.0.0.0")]
-[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+8a565a15f52709e38dccdd4d13ee464e9a64a7dd")]
+[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+ca598fe1f6c7cf993a64a0c9eeef43402dc2fb69")]
 [assembly: System.Reflection.AssemblyProductAttribute("PickUpAndHaul")]
 [assembly: System.Reflection.AssemblyTitleAttribute("PickUpAndHaul")]
 [assembly: System.Reflection.AssemblyVersionAttribute("1.0.0.0")]

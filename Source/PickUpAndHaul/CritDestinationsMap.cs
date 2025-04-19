@@ -141,7 +141,7 @@ namespace PickUpAndHaul
         public static bool TryGetHaulingVehicle(out Pawn vehicle)
         {
             vehicle = null;
-            foreach(var (comp,v) in UseVehicleToHaul)
+            foreach (var (comp, v) in UseVehicleToHaul)
             {
                 if (v)
                 {
@@ -342,13 +342,12 @@ namespace PickUpAndHaul
         }
 
         public static CustomJobDriver CurrentCustomJob;
-        public static Job StartVehicleHaulJob(Pawn vehicle, Pawn pawn)
+        public static void StartVehicleHaulJob(Pawn vehicle, Pawn pawn)
         {
+            Log.Message($"CritDestinationsMap.StartVehicleHaulJob {pawn} {vehicle}");
 
             CurrentCustomJob = new CustomJobDriver_VehicalHaul(pawn, vehicle);
             CurrentCustomJob.TryActivate();
-
-            return JobMaker.MakeJob(JobDefOf.StandAndStare);
         }
     }
 

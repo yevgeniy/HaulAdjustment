@@ -22,6 +22,7 @@
     <suspendable>false</suspendable>
   </JobDef>
   
+  <!-- depricated -->
   <JobDef>
     <defName>UnloadYourHauledInventory</defName>
     <driverClass>PickUpAndHaul.JobDriver_UnloadYourHauledInventory</driverClass>
@@ -29,6 +30,56 @@
 	<casualInterruptible>false</casualInterruptible>
     <suspendable>false</suspendable>
   </JobDef>
+  
+  
+   <WorkGiverDef>
+    <defName>HaulAdj_VehicleHaul_WorkGiverDef</defName>
+    <label>use vehicle to haul from location</label>
+    <giverClass>PickUpAndHaul.WorkGiver_VehicleHaul</giverClass>
+    <workType>Hauling</workType>
+    <verb>haul</verb>
+    <gerund>vehicle hauling</gerund>
+    <priorityInType>79</priorityInType>
+    <requiredCapacities>
+      <li>Manipulation</li>
+    </requiredCapacities>
+  </WorkGiverDef>
+  
+  <JobDef>
+    <defName>HaulAdj_VehicleHaul_Job</defName>
+    <driverClass>PickUpAndHaul.JobDriver_VehicleHaul</driverClass>
+    <reportString>using vehicle to haul.</reportString>
+	<casualInterruptible>false</casualInterruptible>
+    <suspendable>false</suspendable>
+  </JobDef>
+  
+  <ThingDef ParentName="BuildingBase">
+    <defName>HaulAdj_VehicleHaul_Spot</defName>
+    <label>vehicle haul to spot</label>
+    <description>Designate a haul spot.  Vehicles will haul things here.</description>
+    <drawerType>MapMeshAndRealTime</drawerType>
+    <graphicData>
+      <texPath>Things/Building/Misc/CaravanHitchingSpot</texPath>
+      <graphicClass>Graphic_Single</graphicClass>
+      <drawSize>(1,1)</drawSize>
+    </graphicData>
+    <altitudeLayer>FloorEmplacement</altitudeLayer>
+    <statBases>
+      <WorkToBuild>0</WorkToBuild>
+    </statBases>
+    <useHitPoints>false</useHitPoints>
+    <scatterableOnMapGen>false</scatterableOnMapGen>
+    <designationCategory>Misc</designationCategory>
+    <uiOrder>2010</uiOrder>
+    <passability>Standable</passability>
+    <building>
+      <sowTag>SupportPlantsOnly</sowTag>
+      <canPlaceOverImpassablePlant>false</canPlaceOverImpassablePlant>
+      <ai_chillDestination>false</ai_chillDestination>
+      <wakeDormantPawnsOnConstruction>false</wakeDormantPawnsOnConstruction>
+      <artificialForMeditationPurposes>false</artificialForMeditationPurposes>
+    </building>
+  </ThingDef>  
   
 
 	

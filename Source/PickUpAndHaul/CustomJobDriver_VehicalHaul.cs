@@ -17,6 +17,7 @@ namespace PickUpAndHaul
         Pawn vehicle;
         private List<LocalTargetInfo> cells;
         private IntVec3 cell;
+        private List<Pawn> allPawns;
 
         public CustomJobDriver_VehicalHaul(Pawn worker, Pawn vehicle)
         {
@@ -53,16 +54,17 @@ namespace PickUpAndHaul
             CustomToil exitVehicleAtEnd = ExitVehice();
 
             yield return Wait(2);
-            
+
+            yield return PreCheckForThings();
             yield return BoardVehicle();
             yield return TurnOnVehicle();
-            yield return DriveToFromZone(exitVehicleAtEnd);
+            yield return DriveToFromZone();
             yield return ExitVehice();
             yield return Wait(2);
 
             yield return WaitForPacked();
 
-            yield return BoardVehicle();
+            yield return BoardVehicleAllPawns();
             yield return DropWeight();
             yield return DriveBack();
             yield return UnloadAll();
@@ -70,6 +72,30 @@ namespace PickUpAndHaul
 
             yield return exitVehicleAtEnd;
         }
+
+        private CustomToil PreCheckForThings()
+        {
+            return new CustomToil
+            {
+                initAction = () =>
+                {
+                    var vehicle = this.vehicle;
+                    var worker = this.worker;
+
+                    var firstGoodThingToLoadAtLocation = JobDriver_PackHauler.FindClosestLoadableThingFromLocation(this.worker, vehicle.GetHaulInventoryComp().FromLocation);
+                    if (firstGoodThingToLoadAtLocation == null)
+                    {
+                        Messages.Message($"Nothing more to pack at location {vehicle.GetHaulInventoryComp().FromLocation}", MessageTypeDefOf.NeutralEvent);
+                        EndJob();
+                        Find.TickManager.Pause();
+                        return;
+                    }
+
+                    ReadyForNextToil();
+                }
+            };
+        }
+
         private CustomToil UnloadAll()
         {
             return new CustomToil
@@ -105,21 +131,23 @@ namespace PickUpAndHaul
                 {
                     var vehicle = this.vehicle;
                     Log.Message($"DRIVE BACK");
-                    if (!Utils.TryFindValidToZone(out var toZone))
+                    var toLocation=vehicle.GetHaulInventoryComp().ToLocation;
+                    if (toLocation==default(IntVec3))
                     {
-                        Log.Message($"----cant find valid to zone");
+                        Log.Message("No to spot?");
                         EndJob();
                         return;
                     }
 
-                    if (!Utils.TryFindFittingCell(vehicle, toZone, out var cell))
+                    if (!Utils.CanGetToCell(vehicle, toLocation))
                     {
-                        Log.Message($"----cant find a valid cell to fit the vehicle");
+                        Messages.Message($"vehicle cant fit in slot {toLocation}", MessageTypeDefOf.NeutralEvent);
+                        Find.TickManager.Pause();
                         EndJob();
                         return;
                     }
 
-                    this.cell = cell;
+                    this.cell = toLocation;
 
                     Log.Message($"----found valid cell {cell}");
                     var v = new VehiclePawnProxy(vehicle);
@@ -180,12 +208,20 @@ namespace PickUpAndHaul
 
                     this.vehicle.GetHaulInventoryComp().AllPacked = false;
 
-                    var job = new Job_PackHauler();
-                    job.targetA = this.vehicle;
-                    job.targetQueueB = this.cells;
+                    Log.Message($"--boarded pawns {string.Join(", ", this.allPawns)}");
+                    foreach(var worker in this.allPawns)
+                    {
 
-                    this.worker.jobs.StopAll();
-                    this.worker.jobs.StartJob(job);
+                        var job = new Job_PackHauler();
+                        job.targetA = this.vehicle;
+                        job.targetB = this.cell;
+
+                        worker.jobs.StopAll();
+
+                        Log.Message($"--starting pack hauling vehicle job for {worker}");
+                        worker.jobs.StartJob(job);
+                    }
+
                 },
                 tickAction = () =>
                 {
@@ -197,7 +233,7 @@ namespace PickUpAndHaul
             };
         }
 
-        private CustomToil DriveToFromZone(CustomToil ifNoMoreFromZones)
+        private CustomToil DriveToFromZone()
         {
             return new CustomToil
             {
@@ -205,29 +241,18 @@ namespace PickUpAndHaul
                 {
                     var vehicle = this.vehicle;
                     Log.Message($"DRIVE TO FROM ZONE");
-                    if (!Utils.TryFindValidFromZone(out var fromZone))
-                    {
-                        Log.Message($"----cant find another from zone");
-                        SetNextToil(ifNoMoreFromZones);
-                        ReadyForNextToil();
+                    var fromLocation = vehicle.GetHaulInventoryComp().FromLocation;
 
+                    if (!Utils.CanGetToCell(vehicle, fromLocation))
+                    {
+                        Messages.Message($"vehicle can't fit in this cell {fromLocation}", MessageTypeDefOf.NeutralEvent);
+                        Find.TickManager.Pause();
+                        EndJob();
+                        
                         return;
                     }
+                    this.cell = fromLocation;
 
-                    this.cells = fromZone.CellsList.Select(v => new LocalTargetInfo(v)).ToList();
-
-                    if (!Utils.TryFindFittingCell(vehicle, fromZone, out var cell))
-                    {
-                        Log.Message($"----cant find a valid cell to fit the vehicle");
-                        SetNextToil(ifNoMoreFromZones);
-                        ReadyForNextToil();
-
-                        return;
-                    }
-                    this.cell = cell;
-
-
-                    Log.Message($"----found valid cell {cell}");
                     var v = new VehiclePawnProxy(vehicle);
                     v.GoTo(cell);
                 },
@@ -267,12 +292,69 @@ namespace PickUpAndHaul
                 {
                     var vehicle = this.vehicle;
                     var v = new VehiclePawnProxy(vehicle);
+                    this.allPawns = v.AllPawnsAboard.ToList();
+                    Log.Message($"--all pawns on board {string.Join(", ", this.allPawns)}");
 
                     v.Drafted = false;
 
                     v.DisembarkAll();
 
                     ReadyForNextToil();
+                }
+            };
+        }
+        private CustomToil BoardVehicleAllPawns()
+        {
+            return new CustomToil
+            {
+                initAction = () =>
+                {
+                    var vehicle = this.vehicle;
+                    var allPawns = this.allPawns;
+
+                    Log.Message($"LOAD PAWNs IN VEHICLE {string.Join(", ", allPawns)} {vehicle}");
+                    var vehicleProxy = new VehiclePawnProxy(vehicle);
+
+                    var boarded = vehicleProxy.AllPawnsAboard;
+
+                    if (boarded.Count > 0 && allPawns.All(v=> boarded.Contains(v)))
+                    {
+                        Log.Message($"--worker already border boarded");
+                        ReadyForNextToil();
+                        return;
+                    }
+
+
+
+                    Log.Message($"--telling pawns to board");
+
+                    foreach(var worker in allPawns)
+                    {
+                        var handler = vehicleProxy.NextAvailableHandler();
+                        Log.Message($"----hander {handler} {worker}");
+
+
+                        if (worker.carryTracker.CarriedThing != null)
+                        {
+                            worker.carryTracker.TryDropCarriedThing(worker.Position, ThingPlaceMode.Near, out var _);
+                        }
+                        vehicleProxy.PromptToBoardVehicle(worker, handler);
+                    }
+                    
+                },
+                tickAction = () =>
+                {
+                    Log.Message($"waiting");
+                    var vehicle = this.vehicle;
+                    var allPawns = this.allPawns;
+                    var vehicleProxy = new VehiclePawnProxy(vehicle);
+                    var boarded = vehicleProxy.AllPawnsAboard;
+                    if (boarded.Count > 0 && allPawns.All(v => boarded.Contains(v)))
+                    {
+                        Log.Message($"--all workers borded vehicle");
+                        this.ReadyForNextToil();
+                        return;
+                    }
                 }
             };
         }
@@ -286,6 +368,7 @@ namespace PickUpAndHaul
                 {
                     var vehicle = this.vehicle;
                     var worker = this.worker;
+
                     Log.Message($"LOAD PAWN IN VEHICLE {worker} {vehicle}");
                     var vehicleProxy = new VehiclePawnProxy(vehicle);
 
@@ -365,10 +448,11 @@ namespace PickUpAndHaul
         }
         public override IEnumerable<Toil> MakeNewToils()
         {
+            Log.Message($"packing stuff in vehicle as much as can {this.pawn}");
             
             var packStart = Toils_General.Wait(2);
             var packEnd = Toils_General.Wait(2);
-            Toil findThingToLoad = FindThingToLoad(packEnd);
+            Toil findThingToLoad = FindThingToLoad(packEnd, TargetB.Cell);
             Toil gotoThing = Toils_Goto.Goto(TargetIndex.C, PathEndMode.Touch);
             Toil startHaul = Toils_Haul.StartCarryThing(TargetIndex.C, false, true);
             Toil goToVehicle = Toils_Goto.GotoThing(TargetIndex.A, PathEndMode.Touch);
@@ -417,29 +501,108 @@ namespace PickUpAndHaul
             });
         }
 
-        private Toil FindThingToLoad(Toil noMoreThingsToLoad)
+        private static HashSet<Thing> Seen = new();
+        public static Thing FindClosestLoadableThingFromLocation(Pawn pawn, IntVec3 center)
         {
+            var map = pawn.Map;
+            var designationManager = map.designationManager;
+
+            Func<Thing, Pawn, bool> validator = (Thing t, Pawn pawn) =>
+            {
+                var a= Utils.OkThingToHaul(t, pawn);
+#if DEBUG
+                Log.Message($"--validator {t}, {pawn} {a}");
+#endif
+                return Utils.OkThingToHaul(t, pawn);
+            };
+
+            var items = new List<Thing>();
+            var peMode = PathEndMode.ClosestTouch;
+            var traverseParams = TraverseParms.For(pawn);
+
+            Seen.Clear();
+            var c = 0;
+
+            Thing closestThing = null;
+
+            Log.Message($"FindClosestLoadableThingFromLocation {pawn} {center}");
+
+
+            while (Utils.FindClosestThing(
+                center,
+                pawn.Map,
+                pawn,
+                Seen,
+                15,
+                (Thing i) => validator(i, pawn),
+                out closestThing)
+            )
+            {
+                c++;
+                if (c > 100)
+                {
+                    Log.Message("TERM SEARCH REACHED.");
+                }
+#if DEBUG
+                Log.Message("----look at: " + closestThing);
+#endif
+                Seen.Add(closestThing);
+
+                if (!map.reachability.CanReach(center, closestThing, peMode, traverseParams))
+                {
+                    Log.Message("----no path to raech");
+                    continue;
+                }
+
+                if (closestThing.def.thingCategories != null
+                    && closestThing.def.thingCategories.Where(v => v != null).Any(v => v.defName.Contains("Chunks")))
+                {
+                    if (designationManager.DesignationOn(closestThing)?.def == DesignationDefOf.Haul
+                        || designationManager.DesignationOn(closestThing)?.def == PickUpAndHaulDesignationDefOf.haulUrgently)
+                    {
+                        /* good item */
+                        break;
+                    }
+
+                    continue;
+                }
+
+
+                
+                break;
+
+                
+            }
+            if (closestThing!=null)
+            {
+                Log.Message($"----found closest thing {closestThing}");
+            }
+            else
+            {
+                Log.Message("---no closest thing");
+            }
+
+            return closestThing;
+        }
+
+        private Toil FindThingToLoad(Toil noMoreThingsToLoad, IntVec3 firstDestinationPosition)
+        {
+
             return Toils_General.Do(() =>
             {
-                var cells = this.job.targetQueueB;
-                var worker = this.pawn;
-                var firstthing = cells.SelectMany(v => v.Cell.GetThingList(worker.Map))
-                    .Where(v => 
-                        v.def.category==ThingCategory.Item
-                        && HaulAIUtility.PawnCanAutomaticallyHaulFast(worker, v, false)
-                        && pawn.CanReserve(v)
-                        && !v.IsForbidden(worker))
-                    .FirstOrDefault();
+                Log.Message("FindThingToLoad");
 
-                if (firstthing == null)
+                var closestThing = FindClosestLoadableThingFromLocation(this.pawn, firstDestinationPosition);
+                if (closestThing == null)
                 {
+                    Log.Message("no more close things found to load");
                     SetNextToil(noMoreThingsToLoad);
                     return;
                 }
 
-                this.pawn.Reserve(firstthing, this.job);
-                this.job.SetTarget(TargetIndex.C, firstthing);
-                this.job.count = firstthing.stackCount;
+                this.pawn.Reserve(closestThing, this.job);
+                this.job.SetTarget(TargetIndex.C, closestThing);
+                this.job.count = closestThing.stackCount;
 
             });
         }

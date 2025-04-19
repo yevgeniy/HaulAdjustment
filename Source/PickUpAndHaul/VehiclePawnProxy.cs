@@ -5,13 +5,15 @@ using System.Linq;
 using System.Reflection;
 using System.Text;
 using System.Threading.Tasks;
+using static UnityEngine.GraphicsBuffer;
+using Verse;
 
 namespace PickUpAndHaul
 {
     public class VehiclePawnProxy
     {
         private readonly Pawn _vehicle;
-        
+
 
         public VehiclePawnProxy(Pawn vehicle)
         {
@@ -20,9 +22,11 @@ namespace PickUpAndHaul
 
         public Thing Thing { get { return _vehicle; } }
 
-        public Faction Faction { get
+        public Faction Faction
+        {
+            get
             {
-                return _vehicle.Faction; 
+                return _vehicle.Faction;
             }
         }
 
@@ -52,8 +56,8 @@ namespace PickUpAndHaul
 
             var transferable = GetTransferable(CargoToLoad, thing);
 
-            if (transferable != null && transferable.countToTransfer>0)
-            { 
+            if (transferable != null && transferable.countToTransfer > 0)
+            {
                 count = transferable.CountToTransfer;
                 return true;
             }
@@ -61,14 +65,14 @@ namespace PickUpAndHaul
 
         }
 
-        public int AddOrTransfer(Thing thing, int count, Pawn carryer=null)
+        public int AddOrTransfer(Thing thing, int count, Pawn carryer = null)
         {
             Log.Message("ATTEMPTING TO ADD: " + thing + " " + count + " to: " + Thing);
             return ClassMaster.Call<int>(
-                Thing, 
-                "AddOrTransfer", 
-                new object[] { thing, count, carryer }, 
-                new Type[] { typeof(Thing), typeof(int), typeof(Pawn)}
+                Thing,
+                "AddOrTransfer",
+                new object[] { thing, count, carryer },
+                new Type[] { typeof(Thing), typeof(int), typeof(Pawn) }
             );
         }
 
@@ -164,10 +168,19 @@ namespace PickUpAndHaul
             return ClassMaster.CallStatic<bool>(
                "Ext_Vehicles",
                "FitsOnCell",
-               new object[] { this.Thing,  cell }
+               new object[] { this.Thing, cell }
             );
 
-            
+
+        }
+        public bool CanReach(IntVec3 cell)
+        {
+            return ClassMaster.CallStatic<bool>(
+               "VehicleReachabilityImmediate",
+               "CanReachImmediateVehicle",
+               new object[] { this.Thing.Position, new LocalTargetInfo(cell), this.Thing.Map, this.Thing.def, PathEndMode.OnCell },
+               new Type[] { typeof(IntVec3), typeof(LocalTargetInfo), typeof(Map), this.Thing.def.GetType(), typeof(PathEndMode) }
+            );
         }
         public bool IsOverloaded
         {

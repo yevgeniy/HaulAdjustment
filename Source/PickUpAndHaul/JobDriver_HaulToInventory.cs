@@ -465,6 +465,7 @@ public class JobDriver_HaulToInventory : JobDriver
                     pawn.Map,
                     pawn,
                     Seen,
+                    12,
                     (Thing i) => validator(i, pawn, itemIsUrgent(i), designationManager),
                     out Thing closestThing)
                 )

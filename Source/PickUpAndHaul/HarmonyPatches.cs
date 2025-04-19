@@ -3,6 +3,7 @@ using System.Reflection;
 using HarmonyLib;
 using RimWorld;
 using Verse;
+using Verse.Sound;
 using static Unity.Burst.Intrinsics.X86.Avx;
 
 namespace PickUpAndHaul;
@@ -68,6 +69,19 @@ static class HarmonyPatches
         harmony.Patch(AccessTools.Method(typeof(Pawn_JobTracker), nameof(Pawn_JobTracker.StartJob)),
             prefix: new(typeof(HarmonyPatches), nameof(StartJob)));
 
+        harmony.Patch(original: AccessTools.Method(typeof(Targeter), nameof(InMapTargeter.TargeterOnGUI)),
+            postfix: new HarmonyMethod(typeof(HarmonyPatches),
+            nameof(DrawTargeters)));
+        harmony.Patch(original: AccessTools.Method(typeof(Targeter), nameof(InMapTargeter.ProcessInputEvents)),
+            postfix: new HarmonyMethod(typeof(HarmonyPatches),
+            nameof(ProcessTargeterInputEvents)));
+        harmony.Patch(original: AccessTools.Method(typeof(Targeter), nameof(InMapTargeter.TargeterUpdate)),
+            postfix: new HarmonyMethod(typeof(HarmonyPatches),
+            nameof(TargeterUpdate)));
+        harmony.Patch(original: AccessTools.Method(typeof(Targeter), nameof(InMapTargeter.StopTargeting)),
+            postfix: new HarmonyMethod(typeof(HarmonyPatches),
+            nameof(TargeterStop)));
+
 
         var type = assmeblies.SelectMany(assembly => assembly.GetTypes())
             .FirstOrDefault(v => v.Name == "VehiclePawn");
@@ -96,36 +110,106 @@ static class HarmonyPatches
 
         Verse.Log.Message("PickUpAndHaul v1.1.2¼ welcomes you to RimWorld with pointless logspam.");
     }
+    private static void SetHaulLocation(CompHauledToInventory comp)
+    {
+        Messages.Message("SET FROM LOCATION", MessageTypeDefOf.NeutralEvent);
+        SoundDefOf.Click.PlayOneShotOnCamera();
+        var targettingFrom = TargetingParameters.ForCell();
+        targettingFrom.canTargetLocations = true;
+        targettingFrom.validator = (TargetInfo c) => true;
+
+        InMapTargeter.BeginTargeting(
+            targettingFrom,
+            delegate (LocalTargetInfo target)
+            {
+                var v = new VehiclePawnProxy(comp.parent as Pawn);
+                if (!v.FitsOnCell(target.Cell))
+                {
+                    Messages.Message("VEHICLE CANT FIT IN TIGHT SPACE", MessageTypeDefOf.NeutralEvent);
+                    return;
+                }
+
+                if (!Utils.TryFindValidToLocation(comp.parent as Pawn, out var toCell, out var errorMessage))
+                {
+                    Messages.Message(errorMessage, MessageTypeDefOf.NeutralEvent);
+                    return;
+                }
+
+                comp.ActivateLocalHaul(target.Cell, toCell);
+                
+            },
+            comp.parent
+        );
+    }
     public static void GetVehiclGizmos(ref IEnumerable<Gizmo> __result, Pawn __instance)
     {
         var gizs = __result.ToList();
 
         var comp = __instance.GetHaulInventoryComp();
-        if (comp!=null && __instance.Faction==Faction.OfPlayerSilentFail)
+        if (comp != null && __instance.Faction == Faction.OfPlayerSilentFail)
         {
-            Command_Action toggleCaravaning = new Command_Action
+            if (comp.VehicleShouldBeUsedToHaul)
             {
-                defaultLabel = comp.VehicleShouldBeUsedToHaul  ? "Stop haul use" : "Start haul use",
-                icon = ContentFinder<Texture2D>.Get("ADJ_HAUL", true),
-                action = delegate ()
+                Command_Action cancleHaul = new Command_Action
                 {
-                    comp.VehicleShouldBeUsedToHaul = !comp.VehicleShouldBeUsedToHaul;
-                    comp.VehicleIsBusy = false;
-                }
-            };
-            gizs.Add(toggleCaravaning);
+                    defaultLabel = "Stop Local Hauling",
+                    icon = ContentFinder<Texture2D>.Get("ADJ_HAUL", true),
+                    action = delegate ()
+                    {
+                        comp.VehicleShouldBeUsedToHaul = false;
+                    }
+                };
+                gizs.Add(cancleHaul);
+            }
+            else
+            {
+
+                var vehicleProxy = new VehiclePawnProxy(__instance);
+                Command_Action activateHaulingVehicle = new Command_Action
+                {
+                    defaultLabel = "Start Local hauling",
+                    icon = ContentFinder<Texture2D>.Get("ADJ_HAUL", true),
+                    action = delegate ()
+                    {
+                        SetHaulLocation(comp);                        
+                    }
+                };
+                gizs.Add(activateHaulingVehicle);
+            }
+
+
 
 
             __result = gizs;
         }
-        
+
     }
 
-    public static bool StartJob(ref Pawn_JobTracker __instance,  Job newJob, ref JobCondition lastJobEndCondition, ThinkNode jobGiver, bool resumeCurJobAfterwards, bool cancelBusyStances, ThinkTreeDef thinkTree, JobTag? tag, bool fromQueue, bool canReturnCurJobToPool, bool? keepCarryingThingOverride, bool continueSleeping, bool addToJobsThisTick, bool preToilReservationsCanFail)
+    private static void DrawTargeters()
     {
-        if (__instance.curJob!=null && lastJobEndCondition == JobCondition.None)
+
+        Targeters.OnGUITargeters();
+    }
+    private static void ProcessTargeterInputEvents()
+    {
+
+        Targeters.ProcessTargeterInputEvents();
+    }
+    private static void TargeterUpdate()
+    {
+
+        Targeters.UpdateTargeters();
+    }
+    private static void TargeterStop()
+    {
+        Targeters.StopAllTargeters();
+    }
+
+    public static bool StartJob(ref Pawn_JobTracker __instance, Job newJob, ref JobCondition lastJobEndCondition, ThinkNode jobGiver, bool resumeCurJobAfterwards, bool cancelBusyStances, ThinkTreeDef thinkTree, JobTag? tag, bool fromQueue, bool canReturnCurJobToPool, bool? keepCarryingThingOverride, bool continueSleeping, bool addToJobsThisTick, bool preToilReservationsCanFail)
+    {
+        if (__instance.curJob != null && lastJobEndCondition == JobCondition.None)
         {
-            lastJobEndCondition= JobCondition.InterruptForced;
+            lastJobEndCondition = JobCondition.InterruptForced;
         }
 
         return true;
@@ -272,7 +356,7 @@ static class HarmonyPatches
     {
         haulDestination = null;
 
-        if (carrier!=null && t.TryGetComp<CompHauledToInventory>(out var c) && !MassUtility.WillBeOverEncumberedAfterPickingUp(carrier, t, t.stackCount))
+        if (carrier != null && t.TryGetComp<CompHauledToInventory>(out var c) && !MassUtility.WillBeOverEncumberedAfterPickingUp(carrier, t, t.stackCount))
         {
 
             if (ModCompatibilityCheck.CombatExtendedIsActive)
@@ -309,7 +393,7 @@ static class HarmonyPatches
             }
         }
 
-        
+
 
         return true;
     }

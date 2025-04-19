@@ -31,5 +31,11 @@ public class PawnUnloadChecker
 public static class PickUpAndHaulJobDefOf
 {
 	public static JobDef UnloadYourHauledInventory;
-	public static JobDef HaulToInventory;
+	public static JobDef HaulAdj_VehicleHaul_Job;
+
+	public static ThingDef HaulAdj_VehicleHaul_Spot;
+
+
+    /*TODO: depricated*/
+    public static JobDef HaulToInventory;
 }

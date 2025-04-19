@@ -5,6 +5,7 @@ using System.Reflection;
 using System.Text;
 using System.Threading.Tasks;
 using Verse;
+using Verse.Noise;
 
 namespace PickUpAndHaul
 {
@@ -158,7 +159,7 @@ namespace PickUpAndHaul
             return thing;
         }
 
-        public static bool FindClosestThing(IntVec3 center, Map map, Pawn pawn, HashSet<Thing> seen, Func<Thing, bool> validator, out Thing foundItem)
+        public static bool FindClosestThing(IntVec3 center, Map map, Pawn pawn, HashSet<Thing> seen, int maxDistance, Func<Thing, bool> validator, out Thing foundItem)
         {
             foundItem = GenClosest.ClosestThingReachable(
                    center,
@@ -166,7 +167,7 @@ namespace PickUpAndHaul
                    ThingRequest.ForGroup(ThingRequestGroup.HaulableEver),
                    PathEndMode.Touch,
                    TraverseParms.For(pawn),
-                   maxDistance: 12,
+                   maxDistance: maxDistance,
                    validator: (i) => false == seen.Contains(i) && validator(i)
                 );
 
@@ -175,10 +176,29 @@ namespace PickUpAndHaul
 
         }
 
-        public static bool TryFindValidToZone(out SlotGroup to)
+        public static bool TryFindValidToLocation(Pawn vehicle, out IntVec3 to, out string notification)
         {
-            to = Find.Maps.SelectMany(v => v.haulDestinationManager.AllGroupsListForReading).FirstOrDefault(v => v.GetName().Split(' ')[0].ToLowerInvariant() == "to");
-            return to != null;
+            var toSpots = vehicle.Map.listerBuildings.allBuildingsColonist.Where(v =>
+            {
+                return v.def == PickUpAndHaulJobDefOf.HaulAdj_VehicleHaul_Spot;
+            }).ToList();
+
+            to = default(IntVec3);
+            notification = "";
+            if (toSpots.Count > 1)
+            {
+                notification = $"More than one TO HAUL spot: {string.Join(", ", toSpots)}";
+                return false;
+            }
+
+            if (toSpots.Count==0)
+            {
+                notification = "Set a TO HAUL spot.";
+                return false;
+            }
+
+            to = toSpots[0].Position;
+            return true;
         }
         public static bool TryFindValidFromZones(out List<SlotGroup> froms)
         {
@@ -205,9 +225,9 @@ namespace PickUpAndHaul
             cell = default(IntVec3);
 
             var v = new VehiclePawnProxy(vehicle);
-            foreach(var c in zone.CellsList)
+            foreach (var c in zone.CellsList)
             {
-                if (v.FitsOnCell(c) && vehicle.Map.reachability.CanReach(vehicle.Position,c, PathEndMode.OnCell,TraverseParms.For(vehicle)))
+                if (v.FitsOnCell(c) && vehicle.Map.reachability.CanReach(vehicle.Position, c, PathEndMode.OnCell, TraverseParms.For(vehicle)))
                 {
                     cell = c;
                     return true;
@@ -215,6 +235,13 @@ namespace PickUpAndHaul
             }
 
             return false;
+        }
+
+        public static bool CanGetToCell(Pawn vehicle, IntVec3 cell)
+        {
+            var v = new VehiclePawnProxy(vehicle);
+
+            return v.FitsOnCell(cell) && vehicle.Map.reachability.CanReach(vehicle.Position, cell, PathEndMode.OnCell, TraverseParms.For(vehicle));
         }
     }
 
